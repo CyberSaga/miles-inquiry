@@ -233,7 +233,7 @@ def test_report_csv(workbook, lookup, tmp_path):
     rp = write_report(s, tmp_path / "r.csv")
     raw = rp.read_bytes()
     assert raw.startswith(b"\xef\xbb\xbf")
-    rows = list(csv.DictReader(rp.open(encoding="utf-8-sig", newline="")))
+    rows = list(csv.DictReader(rp.read_text(encoding="utf-8-sig").splitlines()))
     assert len(rows) == len(ROWS)
     assert rows[0].keys() >= {"row", "origin_raw", "dest_raw", "origin_iata", "dest_iata", "km", "status", "url", "note"}
     assert any(r["status"] == "hsr" for r in rows)

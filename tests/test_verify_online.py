@@ -110,7 +110,7 @@ def test_verify_routes_offline(tmp_path: Path):
     text = summarize(res)
     assert "match=2" in text and "mismatch=1" in text and "TSA-MZG" in text
     out = write_verify_csv(res, tmp_path / "v.csv")
-    rows = list(csv.DictReader(out.open(encoding="utf-8-sig", newline="")))
+    rows = list(csv.DictReader(out.read_text(encoding="utf-8-sig").splitlines()))
     assert rows[0]["status"] == "match" and rows[0]["url"].endswith("routes=TPE-JFK")
 
 

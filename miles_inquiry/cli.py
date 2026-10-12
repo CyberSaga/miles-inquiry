@@ -3,6 +3,7 @@
     python -m miles_inquiry fill INPUT.xlsx [...]
     python -m miles_inquiry update-airports [...]
     python -m miles_inquiry verify-online (--report REPORT.csv | --routes TPE-JFK,MZG-KHH) [...]
+    python -m miles_inquiry screenshots (--report REPORT.csv | --routes TPE-JFK,MZG-KHH) [--out DIR] [...]
 """
 from __future__ import annotations
 
@@ -73,6 +74,21 @@ def build_parser() -> argparse.ArgumentParser:
     _add_airport_args(v)
     _add_data_dir_arg(v)
     v.set_defaults(func=cmd_verify_online)
+
+    # screenshots -------------------------------------------------------------
+    s = sub.add_parser("screenshots",
+                       help="（選用）每條路線擷取一張 greatcirclemap.com 截圖存到獨立資料夾，作為距離佐證；需 Node.js + playwright")
+    src = s.add_mutually_exclusive_group(required=True)
+    src.add_argument("--report", type=Path, help="fill 產生的報表 CSV：為其中每條有距離的路線截圖，並與表內距離比對")
+    src.add_argument("--routes", help="以逗號分隔的路線，如 TPE-JFK,MZG-KHH")
+    s.add_argument("--out", type=Path, default=None,
+                   help="截圖資料夾（預設：報表旁的「<檔名>_greatcirclemap截圖」；已存在且非空時自動加 (2)、(3)…）")
+    s.add_argument("--method", choices=METHODS, default=DEFAULT_METHOD, help="--routes 模式下比對用的本機演算法")
+    s.add_argument("--width", type=int, default=1280, help="截圖寬度（像素，預設 1280）")
+    s.add_argument("--height", type=int, default=800, help="截圖高度（像素，預設 800）")
+    _add_airport_args(s)
+    _add_data_dir_arg(s)
+    s.set_defaults(func=cmd_screenshots)
     return p
 
 
@@ -152,6 +168,23 @@ def cmd_verify_online(args) -> int:
     if args.out:
         print(f"結果：{write_verify_csv(results, args.out)}")
     return 2 if any(r.status == "mismatch" for r in results) else 0
+
+
+def cmd_screenshots(args) -> int:
+    from .screenshots import default_out_dir, free_dir, jobs_from_report, jobs_from_routes, summarize, take_screenshots
+    from .verify_online import parse_routes
+
+    jobs = jobs_from_report(args.report) if args.report else jobs_from_routes(parse_routes(args.routes))
+    if not jobs:
+        print("沒有可截圖的路線（報表中沒有已填距離的列）")
+        return 0
+    out_dir = free_dir(args.out or default_out_dir(args.report))
+    print(f"擷取 {len(jobs)} 條路線的 greatcirclemap.com 截圖（每條約 3–5 秒）…")
+    results = take_screenshots(jobs, out_dir, db=_load_airports(args), method=args.method,
+                               width=args.width, height=args.height)
+    print(summarize(results, out_dir))
+    print(f"索引：{out_dir / 'index.csv'}、{out_dir / 'index.html'}")
+    return 2 if any(r.status in ("mismatch", "error") for r in results) else 0
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

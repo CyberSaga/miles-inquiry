@@ -176,6 +176,30 @@ python -m miles_inquiry verify-online --routes TPE-JFK,MZG-KHH
 「AAA ⇾ BBB / 12566 km」的文字與本機計算比較，列出 `match / mismatch / site_missing（網站沒有該代碼）/ error`；
 另有 `site_reassigned`：代碼在網站資料與 OurAirports 相距超過 50 km（如 `KTI`），本機採 OurAirports 座標，網站數字不可比對，不會送去核對。有 mismatch 時結束碼為 2。
 
+### `screenshots` — 每條路線一張網站截圖作為佐證（選用）
+
+需求同 `verify-online`（Node.js + Playwright）。對 `fill` 報表中**每條有距離的路線**（依表內起→迄方向，重複路線只截一次）
+開啟 `https://www.greatcirclemap.com/?routes=AAA-BBB` 並截圖，存到**獨立資料夾**：
+
+```bash
+python -m miles_inquiry screenshots --report 碳盤查_2026-05_距離_report.csv
+#  → 碳盤查_2026-05_距離_greatcirclemap截圖/  （已存在且非空時自動改用 …(2)）
+python -m miles_inquiry screenshots --routes TPE-JFK,MZG-KHH --out 截圖
+```
+
+資料夾內容：
+
+| 檔案 | 說明 |
+|---|---|
+| `TPE-JFK_12566km.png` | 網站顯示的距離＝表內距離（檔名的 km 是從網頁讀到的數字） |
+| `KHH-SAI_網站無此機場.png` | 網站資料庫沒有該代碼，截圖會顯示網站的錯誤訊息（此類距離取自 OurAirports） |
+| `AAA-BBB_網站XXkm_表內YYkm.png` | 不符（理論上不會發生；結束碼 2） |
+| `index.csv` | 路線、網站 km、表內 km、結果、對應的工作表列號、網址、擷取時間 |
+| `index.html` | 同上附縮圖，用瀏覽器開啟即可逐張檢視 |
+
+每張截圖底部有一條黑色列，寫明網址與擷取時間（瀏覽器截圖沒有網址列，故由本工具加註，並標示「此列為 miles_inquiry 加註」）；
+網站本身的畫面（路線、距離、地圖）不做任何修改。
+
 ## 高鐵判定規則
 
 兩端**都**位於台灣高鐵走廊時標記為疑似高鐵：
@@ -206,7 +230,7 @@ pip install -e .[test]
 pytest
 ```
 
-測試全部使用程式內建的合成活頁簿與合成機場表，不含任何實際資料；`verify-online` 的測試以假網頁離線執行。
+測試全部使用程式內建的合成活頁簿與合成機場表，不含任何實際資料；`verify-online`、`screenshots` 的測試以假網頁離線執行。
 
 ---
 
@@ -230,6 +254,7 @@ python -m miles_inquiry fill INPUT.xlsx [-o OUT.xlsx] [--sheet 航空] [--method
                                         [--decimals 0] [--overwrite] [--lookup PATH] [--report PATH]
 python -m miles_inquiry update-airports          # refresh data/airports_greatcirclemap.csv + data/airports.csv
 python -m miles_inquiry verify-online --report OUT_report.csv   # optional: compare with the live site (Node + Playwright)
+python -m miles_inquiry screenshots --report OUT_report.csv     # optional: one site screenshot per route, in its own folder
 ```
 
 The input file is never modified; output defaults to `INPUT_距離.xlsx` plus a CSV report
