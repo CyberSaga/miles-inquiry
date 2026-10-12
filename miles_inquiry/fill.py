@@ -4,15 +4,17 @@ from __future__ import annotations
 import csv
 import re
 import unicodedata
+import zipfile
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import openpyxl
+from openpyxl.utils.exceptions import InvalidFileException
 from openpyxl.worksheet.worksheet import Worksheet
 
-from .geo import METHODS, distance_km, round_km
+from .geo import DEFAULT_METHOD, METHODS, distance_km, round_km
 from .hsr import hsr_note, is_hsr_like
 from .lookup import Lookup, Resolution
 from .overrides import Overrides
@@ -20,6 +22,7 @@ from .overrides import Overrides
 GCM_URL = "https://www.greatcirclemap.com/?routes={o}-{d}"
 NOTE_SEP = "；"
 DEFAULT_SHEET = "航空"
+SUPPORTED_SUFFIXES = (".xlsx", ".xlsm")
 
 # header text (normalised: NFKC, whitespace removed) → role
 HEADER_ALIASES: Dict[str, Tuple[str, ...]] = {
@@ -44,7 +47,7 @@ def _norm_header(value) -> str:
 @dataclass
 class Options:
     sheet: str = DEFAULT_SHEET
-    method: str = "vincenty"
+    method: str = DEFAULT_METHOD
     decimals: int = 0
     overwrite: bool = False
     fill_hsr_distance: bool = False
@@ -96,6 +99,7 @@ class FillSummary:
     counts: Counter = field(default_factory=Counter)
     unresolved: Counter = field(default_factory=Counter)   # raw value → occurrences (not in lookup.csv)
     unresolved_known: Counter = field(default_factory=Counter)   # raw value → occurrences (lookup.csv row with empty iata)
+    blank_rows: List[int] = field(default_factory=list)          # rows with an empty 起站/迄站 next to a real trip
     warnings: List[str] = field(default_factory=list)
 
     def console_summary(self) -> str:
@@ -115,6 +119,8 @@ class FillSummary:
             lines.append("lookup.csv 已標為無法對應、需人工決定代碼的值：")
             for raw, n in self.unresolved_known.most_common():
                 lines.append(f"  {raw}   # 出現 {n} 次")
+        if self.blank_rows:
+            lines.append("起站或迄站空白、請補填的列：" + "、".join(str(r) for r in self.blank_rows))
         return "\n".join(lines)
 
 
@@ -155,17 +161,24 @@ def _contains_run(parts: List[str], run: List[str]) -> bool:
 
 
 def append_note(existing, note: str) -> str:
-    """Append *note* to an existing 備註 string, without duplicating.
+    """Append *note* to an existing 備註 value, without duplicating.
 
-    A note may itself contain ``；`` (e.g. a multi-sentence lookup note), so the
-    duplicate check compares segment sequences rather than whole strings.
+    The existing text is kept exactly as written (its own separators, spacing
+    and wording are never rewritten); ``split_notes`` is used only to detect
+    that the note is already there.  A note may itself contain ``；`` (e.g. a
+    multi-sentence lookup note), so the duplicate check compares segment
+    sequences rather than whole strings.
     """
-    parts = split_notes(existing)
+    existing_text = "" if existing is None else str(existing)
     new_parts = split_notes(note)
-    if not new_parts or _contains_run(parts, new_parts):
-        return str(existing) if existing is not None else ""
-    parts.extend(new_parts)
-    return NOTE_SEP.join(parts)
+    if not new_parts or _contains_run(split_notes(existing_text), new_parts):
+        return existing_text
+    note = note.strip()
+    if not existing_text.strip():
+        return note
+    if re.search(r"[；;]\s*$", existing_text):
+        return existing_text + note
+    return existing_text + NOTE_SEP + note
 
 
 def _is_blank(value) -> bool:
@@ -188,10 +201,30 @@ def _pax_value(value) -> Optional[float]:
         return None
 
 
-def unresolved_note(res: Resolution, lookup_name: str = "data/lookup.csv") -> str:
+def airport_source_note(ap) -> str:
+    """備註 text when the coordinates do not come from greatcirclemap.com's own data."""
+    if ap is None or ap.on_site:
+        return ""
+    if ap.conflict_note:
+        return (f"{ap.iata} 代碼已重新指派：{ap.conflict_note}，座標取自 OurAirports（{ap.name}），"
+                f"greatcirclemap 網站數字不適用")
+    return f"{ap.iata} 不在 greatcirclemap 資料庫，座標取自 OurAirports（{ap.name}）"
+
+
+def unresolved_note(res: Resolution, lookup_name: str = "data/lookup.csv", role: str = "") -> str:
+    if res.status == "blank":
+        return f"{role or '起站/迄站'}空白，請補填"
     if res.via == "lookup":  # explicitly marked unresolvable in lookup.csv
         return f"無法對應機場代碼：{res.raw}" + (f"（{res.note}）" if res.note else "")
     return f"無法對應機場代碼：{res.raw}，請更新 {lookup_name}"
+
+
+def lookup_display_name(path) -> str:
+    """Short name for 備註 (``data/lookup.csv``) – never a full machine path."""
+    if not path:
+        return "data/lookup.csv"
+    path = Path(path)
+    return f"{path.parent.name}/{path.name}" if path.parent.name else path.name
 
 
 # ---------------------------------------------------------------------------
@@ -208,6 +241,33 @@ def default_report_path(output_path: Path) -> Path:
     return output_path.with_name(f"{output_path.stem}_report.csv")
 
 
+def next_free_path(path: Path) -> Path:
+    """``x.xlsx`` → ``x.xlsx`` if free, else ``x(2).xlsx``, ``x(3).xlsx`` … (never clobbers an existing file)."""
+    path = Path(path)
+    if not path.exists():
+        return path
+    stem = re.sub(r"\(\d+\)$", "", path.stem)
+    n = 2
+    while True:
+        candidate = path.with_name(f"{stem}({n}){path.suffix}")
+        if not candidate.exists():
+            return candidate
+        n += 1
+
+
+def load_input_workbook(input_path: Path):
+    """openpyxl load with Chinese errors; .xlsm keeps its VBA project."""
+    suffix = input_path.suffix.lower()
+    if suffix not in SUPPORTED_SUFFIXES:
+        raise ValueError(f"{input_path.name}：只支援 {' / '.join(SUPPORTED_SUFFIXES)}（不支援 .xls、.csv）；"
+                         "請先在 Excel 另存為 .xlsx")
+    try:
+        # NOT data_only → formulas preserved; keep_vba so an .xlsm stays a valid macro workbook
+        return openpyxl.load_workbook(input_path, keep_vba=(suffix == ".xlsm"))
+    except (zipfile.BadZipFile, InvalidFileException, KeyError) as exc:
+        raise ValueError(f"{input_path} 不是有效的 {suffix} 檔（可能是 .xls/.csv 改了副檔名，或檔案損毀）：{exc}") from exc
+
+
 def fill_workbook(input_path: Path, output_path: Path, lookup: Lookup,
                   overrides: Optional[Overrides] = None,
                   options: Optional[Options] = None) -> FillSummary:
@@ -218,8 +278,10 @@ def fill_workbook(input_path: Path, output_path: Path, lookup: Lookup,
         raise FileNotFoundError(f"找不到輸入檔 {input_path}")
     if output_path.resolve() == input_path.resolve():
         raise ValueError("輸出檔不可與輸入檔相同（工具絕不覆寫原始檔）")
+    if input_path.suffix.lower() == ".xlsm" and output_path.suffix.lower() != ".xlsm":
+        raise ValueError("輸入為 .xlsm（含巨集）時，輸出檔也必須是 .xlsm，否則 Excel 無法開啟")
 
-    wb = openpyxl.load_workbook(input_path)   # NOT data_only → formulas preserved
+    wb = load_input_workbook(input_path)
     if options.sheet not in wb.sheetnames:
         raise ValueError(f"活頁簿沒有工作表「{options.sheet}」，現有：{wb.sheetnames}")
     ws = wb[options.sheet]
@@ -231,7 +293,7 @@ def fill_workbook(input_path: Path, output_path: Path, lookup: Lookup,
     if "pax" not in cols:
         summary.warnings.append("找不到「人次」欄，無法依人次=0 排除")
 
-    lookup_name = str(lookup.path) if lookup.path else "data/lookup.csv"
+    lookup_name = lookup_display_name(lookup.path)
 
     for r in range(header_row + 1, ws.max_row + 1):
         o_cell = ws.cell(r, cols["origin"])
@@ -262,6 +324,19 @@ def fill_workbook(input_path: Path, output_path: Path, lookup: Lookup,
 
         if res_o.iata and res_d.iata:
             result.url = GCM_URL.format(o=res_o.iata, d=res_d.iata)
+
+        # 1b. blank endpoint next to a real trip → data-entry gap, ask a human ----
+        blanks = [(role, res) for role, res in (("起站", res_o), ("迄站", res_d)) if res.status == "blank"]
+        if blanks:
+            for role, res in blanks:
+                add_cell_note(unresolved_note(res, lookup_name, role))
+            summary.blank_rows.append(r)
+            result.status = "unresolved"
+            if not _is_blank(dist_cell.value):
+                result.km = dist_cell.value
+                report_notes.append("已有距離，保留")
+            _finish(result, report_notes, summary)
+            continue
 
         # 2. HSR-like (checked first: an HSR row gets only the HSR note) ------
         hsr = is_hsr_like(o_cell.value, d_cell.value, res_o.iata, res_d.iata)
@@ -320,6 +395,10 @@ def fill_workbook(input_path: Path, output_path: Path, lookup: Lookup,
         else:
             a = lookup.airports.get(res_o.iata)
             b = lookup.airports.get(res_d.iata)
+            for role, ap in (("起站", a), ("迄站", b)):
+                src_note = airport_source_note(ap)
+                if src_note:
+                    add_cell_note(f"{role} {src_note}")
             km = round_km(distance_km(a.lat, a.lon, b.lat, b.lon, options.method), options.decimals)
             if res_o.iata == res_d.iata:
                 report_notes.append("起迄相同，距離為 0")

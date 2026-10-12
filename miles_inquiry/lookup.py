@@ -29,6 +29,7 @@ Matching rules
 from __future__ import annotations
 
 import csv
+import io
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -43,19 +44,21 @@ LEGACY_COLUMNS = ("value", "iata", "note")
 # Values accepted in the ``review`` column meaning "always ask a human".
 REVIEW_TRUE: Set[str] = {"YES", "Y", "TRUE", "T", "1", "V", "是", "要", "需確認", "請確認", "REVIEW", "✓"}
 
-# Values meaning "no flight" – rows are skipped entirely.
-SKIP_VALUES: Set[str] = {"無", "0", "", "-", "—", "N/A", "NA", "無資料"}
+# Values meaning "no flight" – rows are skipped entirely.  A *blank* cell is NOT
+# in this set: an empty origin/destination next to a real trip is a data-entry
+# gap that must be flagged, not an intentional exclusion.
+SKIP_VALUES: Set[str] = {"無", "0", "-", "—", "N/A", "NA", "無資料"}
+
+# Encodings tried when reading user-maintained CSV files.  Excel's plain "CSV"
+# save on a zh-TW Windows machine writes ANSI (cp950), not UTF-8.
+CSV_ENCODINGS = ("utf-8-sig", "cp950")
 
 _IATA_RE = re.compile(r"^[A-Z]{3}$")
 
 
 def normalize(value) -> str:
-    """NFKC-normalise, collapse inner whitespace, strip, upper-case."""
-    if value is None:
-        return ""
-    text = unicodedata.normalize("NFKC", str(value))
-    text = re.sub(r"\s+", " ", text).strip()
-    return text.upper()
+    """NFKC-normalise, collapse inner whitespace (none around ``/``), strip, upper-case."""
+    return display(value).upper()
 
 
 def display(value) -> str:
@@ -63,7 +66,20 @@ def display(value) -> str:
     if value is None:
         return ""
     text = unicodedata.normalize("NFKC", str(value))
-    return re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"\s+", " ", text).strip()
+    return re.sub(r"\s*/\s*", "/", text)      # 'LGA / EWR' == 'LGA/EWR'
+
+
+def read_csv_text(path: Path, encodings=CSV_ENCODINGS) -> str:
+    """Read a user CSV as text: UTF-8 (with or without BOM) first, then cp950 (Excel「CSV」on zh-TW Windows)."""
+    data = Path(path).read_bytes()
+    for enc in encodings:
+        try:
+            return data.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    raise ValueError(f"{path} 的文字編碼無法辨識（既非 UTF-8 也非 cp950/Big5）；"
+                     "請在 Excel 以「CSV UTF-8 (逗號分隔)」另存")
 
 
 def is_skip_value(value) -> bool:
@@ -99,7 +115,7 @@ class Resolution:
     """Result of resolving one raw cell value."""
     raw: str                      # display form of the raw value
     iata: Optional[str]           # resolved code, or None
-    status: str                   # 'skip' | 'ok' | 'unresolved'
+    status: str                   # 'skip' | 'ok' | 'unresolved' | 'blank'
     via: str = ""                 # 'direct' | 'lookup' | ''
     note: str = ""                # note from lookup.csv (if any)
     correction: bool = False      # value looked like IATA but mapped elsewhere
@@ -147,7 +163,7 @@ class Lookup:
         entries: Dict[str, LookupEntry] = {}
         if not path.is_file():
             raise FileNotFoundError(f"找不到對應表 {path}")
-        with path.open("r", encoding="utf-8-sig", newline="") as fh:
+        with io.StringIO(read_csv_text(path), newline="") as fh:
             reader = csv.reader(fh)
             header_seen = False
             cols = {name: i for i, name in enumerate(LOOKUP_COLUMNS)}   # default order
@@ -191,6 +207,8 @@ class Lookup:
     def resolve(self, value) -> Resolution:
         raw = display(value)
         key = normalize(value)
+        if not key:
+            return Resolution(raw=raw, iata=None, status="blank")
         if is_skip_value(key):
             return Resolution(raw=raw, iata=None, status="skip")
 

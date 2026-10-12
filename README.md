@@ -1,11 +1,23 @@
 # miles-inquiry — 航空差旅距離自動填入工具
 
 把碳盤查活頁簿「航空」工作表中的 **航班(起站) / 航班(迄站)** 轉成 IATA 機場代碼、
-計算大圓距離（公里，與 <https://www.greatcirclemap.com/> 同為 WGS-84 計算）填入 **距離** 欄，
-並把看起來像 **高鐵** 的列（例如 新竹↔台北、台中↔台北）標註在備註，請人工確認。
+計算大圓距離（公里）填入 **距離** 欄，並把看起來像 **高鐵** 的列（例如 新竹↔台北、台中↔台北）標註在備註，請人工確認。
 
-* 只需 Python 3.9+ 與 `openpyxl`，離線可用。
-* 絕不覆寫原始檔：輸出為 `<檔名>_距離.xlsx`，並附 `<檔名>_距離_report.csv` 報表。
+**計算結果與 <https://www.greatcirclemap.com/> 顯示的數字完全相同**：
+
+| 網站怎麼算 | 本工具怎麼做 |
+|---|---|
+| 機場座標：網站自己的 `airports.csv`（約 6,470 筆，含少數非 IATA 識別碼，座標 3 位小數） | 同一份檔案的快照 `data/airports_greatcirclemap.csv`（`update-airports` 可重新下載） |
+| 距離：GeographicLib `Geodesic.WGS84.Inverse(...).s12`（Karney 演算法，WGS-84 橢球） | Python `geographiclib` 同一演算法（預設 `--method geodesic`） |
+| 顯示：`Math.round(s12 / 1000)` km（0.5 進位） | `floor(km + 0.5)`（非 Python 預設的四捨六入五成雙） |
+
+已核對：TPE-JFK 12566、MZG-KHH 132、TSA-MZG 256、SHA-TSA 680 km，以及樣本活頁簿中全部 58 條網站能算的路線，皆與網站一致（`verify-online` 子命令可隨時重新核對）。
+
+網站沒有的代碼（例如 2023 年啟用的暹粒吳哥 SAI、北京大興 PKX、成都天府 TFU）改用 [OurAirports](https://ourairports.com/data/)
+的座標（`data/airports.csv`），並在備註寫明「不在 greatcirclemap 資料庫，座標取自 OurAirports」。
+
+* 只需 Python 3.9+ 與 `openpyxl`、`geographiclib`，離線可用。
+* 絕不覆寫原始檔：輸出為 `<檔名>_距離.xlsx`，並附 `<檔名>_距離_report.csv` 報表；輸出檔已存在時也不覆蓋，改存為 `<檔名>_距離(2).xlsx`（加 `--overwrite-output` 才覆寫）。
 * 可重複執行（idempotent）：已填的距離預設保留、備註不會重複追加。
 * 對應表 `data/lookup.csv` 由使用者持續維護；不認得的值會列在畫面與報表上，照提示加進去即可。
 
@@ -14,10 +26,11 @@
 ```bash
 git clone <this repo> miles-inquiry
 cd miles-inquiry
-pip install -e .          # 或只 pip install openpyxl
+pip install -e .          # 或只 pip install openpyxl geographiclib
 ```
 
-Windows 使用者：把 `.xlsx` 直接**拖曳到 `fill.bat`** 上即可（需先安裝 Python 並勾選加入 PATH）。
+Windows 使用者：把 `.xlsx` 直接**拖曳到 `fill.bat`** 上即可（需先安裝 Python 並勾選加入 PATH，再 `pip install openpyxl geographiclib`）。
+`fill.bat` 也可在命令列用 `fill.bat 檔案.xlsx` 執行（相對路徑以目前目錄為準）；檔案為 UTF-8＋CRLF，開頭的 `chcp 65001` 讓中文訊息正常顯示。
 
 ## 使用
 
@@ -32,11 +45,12 @@ python -m miles_inquiry fill 碳盤查_2026-05.xlsx
 |---|---|
 | `-o OUTPUT.xlsx` | 指定輸出檔（不可與輸入檔相同） |
 | `--sheet 航空` | 工作表名稱（預設 `航空`） |
-| `--method vincenty\|haversine` | 距離演算法，預設 `vincenty`（WGS-84 橢球，與 greatcirclemap.com 一致） |
-| `--decimals 0` | 小數位數，預設 0（寫入整數） |
+| `--method geodesic\|vincenty\|haversine` | 距離演算法，預設 `geodesic`（GeographicLib WGS-84，與網站相同）；`vincenty` 為內建無依賴版本（一般航線差 <1 m，近對蹠點路線最多差約 20 km）；`haversine` 為球面近似（與橢球值相差最多約 ±0.35 %，正負視航線而定） |
+| `--decimals 0` | 小數位數，預設 0（寫入整數，0.5 進位同網站） |
 | `--overwrite` | 覆寫已有的距離 |
+| `--overwrite-output` | 輸出檔／報表已存在時直接覆寫（預設改存為 `檔名(2).xlsx`） |
 | `--fill-hsr-distance` | 疑似高鐵列仍填入飛航距離（預設留空） |
-| `--lookup PATH` / `--airports PATH` / `--overrides PATH` | 自訂資料檔 |
+| `--lookup PATH` / `--airports PATH` / `--fallback-airports PATH` / `--overrides PATH` | 自訂資料檔 |
 | `--data-dir DIR` | 一次指定資料目錄（預設專案 `data/`，亦可用環境變數 `MILES_INQUIRY_DATA`） |
 | `--report PATH` / `--no-report` | 報表路徑 / 不產生報表 |
 
@@ -48,6 +62,7 @@ python -m miles_inquiry fill 碳盤查_2026-05.xlsx
 | 狀況 | 距離 | 備註 | 報表 status |
 |---|---|---|---|
 | 起/迄為「無」「0」「-」「N/A」或 人次=0 | 不動 | 不動（不重複寫「排除」） | `skipped` |
+| 起或迄**空白**但人次>0（漏填） | 留空 | `起站空白，請補填` | `unresolved` |
 | 兩端皆在台灣高鐵走廊（見下） | 留空（`--fill-hsr-distance` 才填） | `疑似高鐵(新竹↔台北)，請確認交通方式並移至高鐵表` | `hsr` |
 | 任一端無法對應機場代碼 | 留空 | `無法對應機場代碼：XXX，請更新 data/lookup.csv` | `unresolved` |
 | 已有距離且未加 `--overwrite` | 保留 | — | `kept` |
@@ -57,8 +72,11 @@ python -m miles_inquiry fill 碳盤查_2026-05.xlsx
 
 * `lookup.csv` 的**誤植修正**（原值本身是機場代碼卻對應到別的代碼，如 `TAS,TSA`）：
   `起站 TAS→TSA 疑為代碼誤植（…note…）請確認`
-* `lookup.csv` 的 note 以 `!` 開頭（如 `LGA/EWR,LGA,!原值含兩個機場，暫以 LGA 計算`）
-* 直接輸入的代碼在 OurAirports 中**無定期航班**（如 `SIA` 西安西關，已停用）：`無定期航班，請確認代碼`
+* `lookup.csv` 的 `review` 欄為 `yes`（如 `LGA/EWR,LGA,yes,…`、`台北,TSA,yes,…`）：`起站 台北→TSA：…note…`
+* 直接輸入的代碼在 OurAirports 中**無定期航班**（如 `SIA` 西安西關）：`無定期航班，請確認代碼`。OurAirports 標錯的（七美 `CMJ`、望安 `WOT`、綠島 `GNI` 實際有德安航空定期航班）已在 `lookup.csv` 以同碼列（`CMJ,CMJ,,…`）取代這個警告；`PNH` 金邊舊機場（2025-09 停用）則以 `review=yes` 列提醒改用 `KTI`
+* 代碼**不在 greatcirclemap 資料庫**（如 `SAI`）：`SAI 不在 greatcirclemap 資料庫，座標取自 OurAirports（…）`
+* 代碼在網站資料與 OurAirports 相距超過 50 km（代碼已重新指派，如 `KTI` 網站仍是 Kratie、現為金邊德崇）：
+  改用 OurAirports 座標並註明 `greatcirclemap 網站數字不適用`
 
 一般的中文→代碼對應（澎湖→MZG 等）只寫在報表，不佔用備註。
 
@@ -66,38 +84,58 @@ python -m miles_inquiry fill 碳盤查_2026-05.xlsx
 
 ### `lookup.csv` — 值 → IATA 對應表（持續更新）
 
-UTF-8（含 BOM，Excel 直接開），三欄：`value,iata,note`；`#` 開頭為註解。
+UTF-8（含 BOM，Excel 直接開），四欄：`value,iata,review,note`；`#` 開頭為註解（檔內以 `# ===== 台灣 =====` 等分區）。
+舊的三欄格式 `value,iata,note` 也能讀。
+
+用 Excel 編輯後請以「**CSV UTF-8（逗號分隔）**」另存；若不小心存成一般「CSV」（繁中 Windows 為 ANSI/cp950），工具也會自動改用 cp950 讀取，兩種編碼都無法解讀時才報錯。
 
 ```csv
-value,iata,note
-澎湖,MZG,
-高雄,KHH,
-台北,TSA,台北預設松山機場 TSA；若實際為桃園請改 TPE
-新竹,,新竹無民航機場；新竹↔台北多為高鐵
-HONG KONG,HKG,
-LGA/EWR,LGA,!原值含兩個機場 LGA/EWR，暫以 LGA 計算
-TAS,TSA,澎湖分行 TAS→MZG 中的 TAS（塔什干）疑為 TSA（松山）誤植
+value,iata,review,note
+澎湖,MZG,,澎湖馬公機場
+台北,TSA,yes,預設松山 TSA（國內/離島線）；國際線多為桃園 TPE，請依航段確認
+新竹,,,新竹無民航機場（HSZ 為空軍基地）；多為高鐵誤植
+HONG KONG,HKG,,香港國際機場
+LGA/EWR,LGA,yes,原值含 LGA/EWR 兩機場，暫以 LGA 計算，請確認
+TAS,TSA,,TAS=塔什干；澎湖分行無此航線，應為 TSA 松山字母顛倒
 ```
 
 比對規則：
 
-1. 原值先做 NFKC 正規化、去頭尾空白、不分大小寫（`kHH`、`ＫＨＨ`、` HONG KONG ` 都能比對）。
+1. 原值先做 NFKC 正規化、去頭尾空白、不分大小寫、忽略「/」兩側空白（`kHH`、`ＫＨＨ`、` HONG KONG `、`Taipei`/`TAIPEI`、`LGA / EWR` 都能比對），所以每個拼法只需列一次。
 2. **有明確列的一律優先**，所以可做誤植修正（`TAS,TSA`）。
-3. 沒有明確列、但本身就是 `airports.csv` 內的 3 碼代碼 → 直接使用。
-4. `iata` 留空 = 已知無法對應（如「新竹」）：距離留空並寫備註。
-5. 都不符合 → `unresolved`，執行結束時會列出：
+3. 沒有明確列、但本身就是機場資料內的 3 碼代碼 → 直接使用。
+4. `iata` 留空 = 已知無法對應（如「新竹」「蘇州」「TAP」）：距離留空並寫備註。
+5. `review` 為 `yes`（也接受 y/true/1/是）= 可對應，但**每次**都把 note 寫進備註請人工確認（多機場城市、二擇一的值）。
+6. 都不符合 → `unresolved`，執行結束時會列出：
 
 ```
-無法對應的值（請加入 data/lookup.csv，格式 value,iata,note）：
-  首爾,,   # 出現 3 次
+無法對應的值（請加入 data/lookup.csv，格式 value,iata,review,note）：
+  首爾,,,   # 出現 3 次
 ```
 
 把這些列貼進 `lookup.csv` 填上代碼再執行一次即可。
 
+目前內建的判斷（可自行修改）：
+
+| 值 | 對應 | 理由 |
+|---|---|---|
+| `TAS` | `TSA`（自動寫備註） | TAS 為塔什干，本行無此航線；澎湖分行 TAS→MZG 必為松山字母顛倒。若日後真有塔什干行程，刪除此列即可 |
+| `SIA` | `SAI`（自動寫備註） | SIA 為西安西關舊碼，已無民航；暹粒支行用，應為暹粒吳哥 SAI |
+| `REP` | `SAI`（自動寫備註） | 暹粒舊機場 2023-10 關閉 |
+| `TAP` | （留空） | 塔帕丘拉（墨西哥）為真實機場，但洛杉磯分行 LAX→TAP 疑為 TPE/TPA 誤植，須人工決定 |
+| `SZX` | `SZX` | 深圳寶安；苏州單位的 SHA↔SZX、SZX↔WUX 等為深圳↔蘇州地區實際航線，維持深圳（只寫報表）。需逐列確認時把該列 `review` 改 `yes` |
+| `LGA/EWR` | `LGA`（review） | 二擇一（兩機場相距約 30 km），暫以 LGA 計算 |
+| `CMJ`、`WOT`、`GNI` | 同碼 | OurAirports 誤標為無定期航班，實際有德安航空航線；列出即不再警告 |
+| `PNH` | `PNH`（review） | 金邊舊機場 2025-09 停用；之後行程請改 KTI |
+| `安大略`/`Ontario` | `ONT`（review） | 暫以加州安大略機場計算；若指加拿大安大略省請改 YYZ |
+| `台北` | `TSA`（review） | 國內/離島線用松山；國際線多為桃園 |
+| `上海`/`東京`/`北京`/`紐約`/`首爾`/`大阪`/`成都`… | `SHA`/`HND`/`PEK`/`JFK`/`ICN`/`KIX`/`CTU` | 依本行既有用法選預設，note 列出替代機場 |
+| `金邊` | `KTI`（review） | 2025-09 德崇機場取代 PNH；之前的行程請改 PNH |
+| `新竹`、`苗栗`、`彰化`、`雲林`、`板橋`、`南港`、`左營`、`屏東`、`蘇州` | （留空） | 無民航機場 |
+
 ### `distance_overrides.csv` — 精確距離覆寫
 
-`from,to,km,source`，對稱（A,B 與 B,A 相同）。若要和 greatcirclemap.com 畫面上的數字完全一致，
-把該數字貼進來，計算時會直接採用：
+`from,to,km,source`，對稱（A,B 與 B,A 相同）。計算時直接採用，優先於一切：
 
 ```csv
 from,to,km,source
@@ -106,17 +144,37 @@ TPE,JFK,12566,greatcirclemap.com 2026-10-12
 
 報表每列都附 `https://www.greatcirclemap.com/?routes=XXX-YYY` 連結，方便點開核對。
 
-### `airports.csv` — 機場座標
+### `airports_greatcirclemap.csv` 與 `airports.csv` — 機場座標
 
-取自 [OurAirports](https://ourairports.com/data/)（公眾領域），已精簡為
-`iata,name,municipality,iso_country,type,lat,lon,scheduled_service`。更新：
+* `airports_greatcirclemap.csv`：網站 <https://www.greatcirclemap.com/airports.csv> 的原樣快照（主要來源）。
+* `airports.csv`：[OurAirports](https://ourairports.com/data/)（公眾領域）精簡為
+  `iata,name,municipality,iso_country,type,lat,lon,scheduled_service`（備援來源，並提供國家、是否有定期航班等資訊）。
+
+更新兩者：
 
 ```bash
-python -m miles_inquiry update-airports                 # 線上下載
-python -m miles_inquiry update-airports --source airports.csv   # 或讀本機完整檔
+python -m miles_inquiry update-airports                        # 線上下載（會自動重試）
+python -m miles_inquiry update-airports --source airports.csv --gcm-source gcm.csv   # 或讀本機檔
+python -m miles_inquiry update-airports --skip-ourairports      # 只更新網站資料
 ```
 
-同一 IATA 代碼若有多筆，取 `scheduled_service=yes`、機場等級較大者。
+同一 IATA 代碼在 OurAirports 若有多筆，取 `scheduled_service=yes`、機場等級較大者。
+
+### `verify-online` — 和網站逐條核對（選用）
+
+需要 Node.js 與 Playwright（核心功能不需要）：
+
+```bash
+npm install -g playwright && npx playwright install chromium
+export NODE_PATH=$(npm root -g)          # Windows: set NODE_PATH=%APPDATA%\npm\node_modules
+
+python -m miles_inquiry verify-online --report 碳盤查_2026-05_距離_report.csv --out 核對.csv
+python -m miles_inquiry verify-online --routes TPE-JFK,MZG-KHH
+```
+
+它會開啟 `https://www.greatcirclemap.com/?routes=AAA-BBB,CCC-DDD`（每頁約 20 條），讀取網頁上
+「AAA ⇾ BBB / 12566 km」的文字與本機計算比較，列出 `match / mismatch / site_missing（網站沒有該代碼）/ error`；
+另有 `site_reassigned`：代碼在網站資料與 OurAirports 相距超過 50 km（如 `KTI`），本機採 OurAirports 座標，網站數字不可比對，不會送去核對。有 mismatch 時結束碼為 2。
 
 ## 高鐵判定規則
 
@@ -125,18 +183,20 @@ python -m miles_inquiry update-airports --source airports.csv   # 或讀本機�
 * 站名/城市：南港 台北 板橋 桃園 新竹 苗栗 台中 彰化 雲林 嘉義 台南 左營，
   以及常見別名（高雄→左營、臺北/台北市、新北→板橋、中壢→桃園、竹北→新竹、虎尾→雲林…）。
 * 走廊城市的機場代碼：TSA、TPE、RMQ、TNN、KHH、CYI（例如 `TSA↔KHH` 也會被標記）。
-* 離島（澎湖 MZG、金門 KNH、馬祖 LZN/MFK、台東、花蓮…）不會被標記，正常計算飛航距離。
+* 站名可帶「高鐵」前綴或「站／車站」後綴（`高鐵台中`、`台中站`、`台北車站`）。
+* 離島（澎湖 MZG、金門 KNH、馬祖 LZN/MFK）與東部（台東、花蓮）不會被標記，正常計算飛航距離。
+* 例外：以代碼輸入的 `TPE↔KHH` 是華航實際營運的國際線接駁航班，不標記、正常填距離（以站名輸入的「桃園↔高雄」仍視為高鐵）；兩端同一站（`桃園↔TPE`、`台北↔TSA`）不是行程，不標記。
 
 別名寫在 `miles_inquiry/hsr.py` 的 `_ALIASES`，可自行增補。
 
 ## 限制與注意事項
 
-* **距離算法**：本機以 WGS-84 橢球 Vincenty 公式計算（`--method haversine` 為球面近似，約短 0.1–0.3 %）。
-  與 greatcirclemap.com 顯示值可能有 ±1 km 左右差異（四捨五入、座標來源不同）；需要完全一致時請用 `distance_overrides.csv`。
-* 機場座標來自 OurAirports，代表點為機場參考點，與網站所用座標可能略有差異。
-* 以 openpyxl 讀寫：公式、格式、欄寬、其他工作表會保留，但**圖表、圖片、巨集（.xlsm 的 VBA）可能遺失**；輸出另存新檔，原檔不動。
-* 「台北」預設對應松山機場 TSA；若多數實際為桃園，請改 `lookup.csv`。
-* `LGA/EWR` 這種同時寫兩個機場的值，請在 `lookup.csv` 指定採用哪一個。
+* 距離與網站一致的前提是：代碼在網站資料庫內、且 `airports_greatcirclemap.csv` 與網站目前的檔案相同
+  （網站更新資料時請執行 `update-airports`）。網站沒有的代碼以 OurAirports 座標計算，備註會註明；
+  若需指定數字，用 `distance_overrides.csv`。
+* 只接受 `.xlsx` 與 `.xlsm`（.xls、.csv 會以中文訊息拒絕，請先在 Excel 另存為 .xlsx）。以 openpyxl 讀寫：公式、格式、欄寬、其他工作表會保留；`.xlsm` 會保留 VBA 專案並輸出為 `.xlsm`，但**圖表、圖片可能遺失**；輸出另存新檔，原檔不動。
+* 備註只會在原文之後以「；」追加，不改寫既有文字；寫入的提示只用 `data/lookup.csv` 這類短名稱，不含電腦路徑。
+* 「台北」預設對應松山機場 TSA（並寫備註）；若多數實際為桃園，請改 `lookup.csv`。
 * 工具只做「代碼→距離」；碳排量欄位（距離×人次×係數）仍由活頁簿公式計算。
 
 ## 開發 / 測試
@@ -146,7 +206,7 @@ pip install -e .[test]
 pytest
 ```
 
-測試全部使用程式內建的合成活頁簿，不含任何實際資料。
+測試全部使用程式內建的合成活頁簿與合成機場表，不含任何實際資料；`verify-online` 的測試以假網頁離線執行。
 
 ---
 
@@ -154,23 +214,30 @@ pytest
 
 `miles-inquiry` fills the 距離 (distance, km) column of the 航空 (air travel) sheet in a
 carbon-inventory workbook. It maps the raw origin/destination values to IATA codes via a
-user-maintained lookup table (`data/lookup.csv`, UTF-8-BOM CSV: `value,iata,note`),
-computes the WGS-84 geodesic distance (Vincenty; `--method haversine` optional) from
-OurAirports coordinates (`data/airports.csv`, refreshed with `update-airports`), and flags
-rows whose both endpoints lie on Taiwan's HSR corridor as probable HSR trips
-(`疑似高鐵(...)`, distance left blank unless `--fill-hsr-distance`).
+user-maintained lookup table (`data/lookup.csv`, UTF-8-BOM CSV: `value,iata,review,note`)
+and computes the distance **exactly as <https://www.greatcirclemap.com/> displays it**: the
+same airport coordinates (a snapshot of the site's `airports.csv`), the same algorithm
+(GeographicLib `Geodesic.WGS84.Inverse`, via the `geographiclib` package) and the same
+rounding (`Math.round`, i.e. half-up to whole km). Codes the site lacks (e.g. SAI, PKX, TFU)
+fall back to OurAirports coordinates and are flagged in 備註. A blank origin/destination next to a
+real trip is flagged (`起站空白，請補填`) rather than skipped; only 無/0/-/N/A or 人次=0 skip a row. Rows whose both endpoints lie on
+Taiwan's HSR corridor are flagged as probable HSR trips (`疑似高鐵(...)`, distance left blank
+unless `--fill-hsr-distance`).
 
 ```bash
 pip install -e .
-python -m miles_inquiry fill INPUT.xlsx [-o OUT.xlsx] [--sheet 航空] [--method vincenty|haversine]
+python -m miles_inquiry fill INPUT.xlsx [-o OUT.xlsx] [--sheet 航空] [--method geodesic|vincenty|haversine]
                                         [--decimals 0] [--overwrite] [--lookup PATH] [--report PATH]
+python -m miles_inquiry update-airports          # refresh data/airports_greatcirclemap.csv + data/airports.csv
+python -m miles_inquiry verify-online --report OUT_report.csv   # optional: compare with the live site (Node + Playwright)
 ```
 
 The input file is never modified; output defaults to `INPUT_距離.xlsx` plus a CSV report
 (`row, raw origin/dest, IATA origin/dest, km, status, greatcirclemap.com URL, note`).
-Unresolved values are listed at the end so you can paste them into `lookup.csv`.
-Exact figures from greatcirclemap.com can be pinned in `data/distance_overrides.csv`
-(`from,to,km,source`, symmetric). Re-runs are idempotent; existing distances are kept
-unless `--overwrite`; notes are appended to 備註 without duplication.
-Limitations: distances are computed locally (may differ by ~1 km from the website);
-openpyxl drops charts/images/VBA on save.
+Unresolved values are listed at the end so you can paste them into `lookup.csv`; a lookup row
+with `review=yes` always writes its note to 備註 for human confirmation, and a row that maps
+one code to another (e.g. `TAS,TSA`) is treated as a typo correction and flagged too.
+Exact figures can be pinned in `data/distance_overrides.csv` (`from,to,km,source`, symmetric).
+Re-runs are idempotent; existing distances are kept unless `--overwrite`; notes are appended
+to 備註 without duplication and without rewriting existing text. An existing output file is never
+clobbered (the run goes to `NAME(2).xlsx` unless `--overwrite-output`). `.xlsm` keeps its VBA; openpyxl drops charts/images on save.

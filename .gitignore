@@ -12,7 +12,11 @@ venv/
 *.xlsx
 *.xlsm
 *_report.csv
+*_verify.csv
 *_距離*
+
+# Node (only needed for the optional verify-online command)
+node_modules/
 
 # Editors / OS
 .idea/

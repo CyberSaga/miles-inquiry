@@ -2,8 +2,10 @@
 # 使用者維護的對應表：value=活頁簿中的原始值，iata=三碼機場代碼（留空=已知無法對應，距離留空並寫備註），
 # review=yes 表示「可對應，但每次都把 note 寫入活頁簿備註請人工確認」，note=說明（一律寫入報表）。
 # 以 # 開頭的列為註解。比對時忽略大小寫、全半形與前後空白（kHH、ＫＨＨ、Taipei/TAIPEI 視為相同），所以每個拼法只需列一次。
-# 本身已是 airports.csv 內的 3 碼代碼（如 KHH、TPE）不必列入，會直接使用；有列的一律優先（可做 TAS→TSA 這類誤植修正）。
+# 本身已是機場資料（airports_greatcirclemap.csv／airports.csv）內的 3 碼代碼（如 KHH、TPE）不必列入，會直接使用；
+# 有列的一律優先（可做 TAS→TSA 這類誤植修正；value 本身是代碼卻對應到別的代碼時，備註會自動寫入請人工確認）。
 # 「無」「0」「-」「N/A」或人次=0 的列會自動排除，不需列入。
+# 多機場城市（台北、上海、東京、紐約…）只列預設機場，note 寫明替代機場；需要每次人工確認者把 review 設為 yes。
 #
 # ===== 台灣 =====
 台北,TSA,yes,預設松山 TSA（國內/離島線）；國際線多為桃園 TPE，請依航段確認
@@ -350,9 +352,9 @@ Jeju,CJU,,濟州國際機場
 Daegu,TAE,,大邱國際機場
 #
 # ===== 東南亞 =====
-金邊,KTI,yes,金邊德崇 KTI（2025-09 取代 PNH）；2025-09 前行程請改 PNH
-金边,KTI,yes,金邊德崇 KTI（2025-09 取代 PNH）；2025-09 前行程請改 PNH
-Phnom Penh,KTI,yes,金邊德崇 KTI（2025-09 取代 PNH）；2025-09 前行程請改 PNH
+金邊,KTI,yes,金邊德崇 KTI（2025-09 取代 PNH；greatcirclemap 網站仍把 KTI 當成 Kratie，座標改取 OurAirports）；2025-09 前行程請改 PNH
+金边,KTI,yes,金邊德崇 KTI（2025-09 取代 PNH；greatcirclemap 網站仍把 KTI 當成 Kratie，座標改取 OurAirports）；2025-09 前行程請改 PNH
+Phnom Penh,KTI,yes,金邊德崇 KTI（2025-09 取代 PNH；greatcirclemap 網站仍把 KTI 當成 Kratie，座標改取 OurAirports）；2025-09 前行程請改 PNH
 暹粒,SAI,,暹粒吳哥國際機場（2023-10 取代 REP）
 暹粒吳哥,SAI,,暹粒吳哥國際機場（2023-10 取代 REP）
 暹粒吴哥,SAI,,暹粒吳哥國際機場（2023-10 取代 REP）
@@ -439,8 +441,8 @@ Hobby,HOU,,休士頓 Hobby
 洛杉磯,LAX,,洛杉磯國際機場
 洛杉矶,LAX,,洛杉磯國際機場
 Los Angeles,LAX,,洛杉磯國際機場
-安大略,ONT,,加州安大略機場（非加拿大安大略省）
-Ontario,ONT,,加州安大略機場（非加拿大安大略省）
+安大略,ONT,yes,暫對應加州安大略機場 ONT；若為加拿大安大略省（多倫多）請改 YYZ
+Ontario,ONT,yes,暫對應加州安大略機場 ONT；若為加拿大安大略省（多倫多）請改 YYZ
 橙縣,SNA,,橙縣約翰韋恩
 橙县,SNA,,橙縣約翰韋恩
 Orange County,SNA,,橙縣約翰韋恩
@@ -570,5 +572,10 @@ TAS,TSA,,TAS=塔什干；澎湖分行無此航線，應為 TSA 松山字母顛�
 SIA,SAI,,SIA=西安西關舊碼已停用；暹粒支行應為暹粒吳哥 SAI（西安請用 XIY）
 REP,SAI,,REP 暹粒舊機場 2023-10 關閉，以 SAI 計算
 TAP,,,TAP=墨西哥塔帕丘拉；洛杉磯分行 LAX→TAP 疑為 TPE（或 TPA）誤植，請人工確認後改碼
-LGA/EWR,LGA,yes,原值含 LGA/EWR 兩機場，暫以 LGA 計算（至 IAH 差約 1%），請確認
-SZX,SZX,,SZX=深圳寶安（非蘇州）；苏州單位 SHA↔SZX、SZX↔WUX 等航線符合深圳實際航班，維持深圳；若實為蘇州請將本列 review 改為 yes 逐列確認
+LGA/EWR,LGA,yes,原值含 LGA/EWR 兩機場（相距約 30 km），暫以 LGA 計算，請確認
+# 下列代碼在 OurAirports 標為「無定期航班」但實際有航班（或需特別說明），列出即可取代自動警告（備註僅寫報表）
+CMJ,CMJ,,七美機場（德安航空定期航班，澎湖離島）
+WOT,WOT,,望安機場（德安航空定期航班，澎湖離島）
+GNI,GNI,,綠島機場（德安航空定期航班）
+PNH,PNH,yes,金邊舊機場（波成東）2025-09 起停用；之後的金邊行程請改 KTI 德崇國際機場
+SZX,SZX,,深圳寶安（蘇州無機場；苏州單位之 SHA↔SZX、SZX↔WUX 為深圳↔蘇州地區實際航線）；若需逐列確認請把本列 review 改為 yes

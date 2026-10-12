@@ -2,7 +2,7 @@ import pytest
 
 from miles_inquiry.airports import AirportDB
 from miles_inquiry.airports import Airport
-from miles_inquiry.lookup import Lookup, is_review_flag, is_skip_value, normalize
+from miles_inquiry.lookup import Lookup, is_review_flag, is_skip_value, normalize, read_csv_text
 from tests.conftest import SYNTH_AIRPORTS
 
 
@@ -14,13 +14,41 @@ def test_normalize_variants():
     assert normalize("臺北　") == "臺北"
     assert normalize(None) == ""
     assert normalize(0) == "0"
+    assert normalize("LGA / EWR") == "LGA/EWR" == normalize("lga /ewr")   # spaces around '/' do not matter
 
 
 def test_skip_values():
-    for v in ("無", "0", 0, 0.0, "", None, "-", "—", "N/A", "n/a", " 無 "):
+    for v in ("無", "0", 0, 0.0, "-", "—", "N/A", "n/a", " 無 "):
         assert is_skip_value(v), v
-    for v in ("TPE", "澎湖", "1"):
+    for v in ("TPE", "澎湖", "1", "", None, "  "):      # a blank cell is NOT an intentional exclusion
         assert not is_skip_value(v), v
+
+
+def test_blank_resolves_to_blank_status(lookup):
+    for v in ("", None, "  ", "\u3000"):
+        r = lookup.resolve(v)
+        assert r.status == "blank" and r.iata is None and r.note_for_cell is None, repr(v)
+
+
+def test_slash_value_matches_with_spaces(lookup):
+    r = lookup.resolve("LGA / EWR")
+    assert r.via == "lookup" and r.review and "LGA" in r.note          # found the LGA/EWR row (LGA absent from synth DB)
+
+
+def test_lookup_saved_as_cp950_by_excel_still_loads(tmp_path, airports):
+    p = tmp_path / "ansi.csv"
+    p.write_bytes("value,iata,review,note\n台北,TSA,,松山\n首爾,ICN,,仁川\n".encode("cp950"))
+    lk = Lookup.load(p, airports)
+    assert lk.resolve("台北").iata == "TSA"
+    assert lk.entries["首爾"].iata == "ICN" and lk.entries["首爾"].note == "仁川"
+    assert read_csv_text(p).startswith("value")
+    # UTF-8 with BOM still preferred
+    p.write_text("\ufeffvalue,iata,review,note\n台北,TSA,,松山\n", encoding="utf-8")
+    assert Lookup.load(p, airports).resolve("台北").iata == "TSA"
+    bad = tmp_path / "bad.csv"
+    bad.write_bytes(b"value,iata\n\xff\xfe\x00\x00\x81,X\n")
+    with pytest.raises(ValueError, match="編碼"):
+        Lookup.load(bad, airports)
 
 
 def test_direct_iata_case_insensitive(lookup):
@@ -127,6 +155,7 @@ def test_unknown_value(lookup):
 def test_skip_resolution(lookup):
     assert lookup.resolve("無").status == "skip"
     assert lookup.resolve(0).status == "skip"
+    assert lookup.resolve("").status == "blank"
 
 
 def test_bad_iata_in_lookup_raises(tmp_path, airports):

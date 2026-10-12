@@ -1,18 +1,31 @@
-"""Great-circle / geodesic distance on the WGS-84 ellipsoid.
+"""Geodesic / great-circle distance on the WGS-84 ellipsoid.
 
-Two methods are provided:
-
-* ``vincenty`` – Vincenty's inverse formula on the WGS-84 ellipsoid (default).
-  This is what most "great circle" web tools report (accuracy ~0.5 mm).
+Methods
+-------
+* ``geodesic`` (default) – GeographicLib ``Geodesic.WGS84.Inverse(...).s12``
+  (Karney's algorithm).  This is exactly what https://www.greatcirclemap.com/
+  computes in the browser, so with the site's airport coordinates and the
+  site's rounding (round-half-up to whole km) the result is identical to the
+  number the site displays.  If ``geographiclib`` cannot be imported the
+  self-contained Vincenty implementation below is used instead (it agrees to
+  well under a metre on ordinary routes, but near-antipodal pairs – where the
+  iteration converges slowly or not at all – can be off by up to ~20 km).
+* ``vincenty`` – Vincenty's inverse formula on WGS-84 (no dependencies).
 * ``haversine`` – spherical great-circle distance using the WGS-84 mean
-  radius (6371.0088 km).  About 0.1–0.3 % shorter than the ellipsoidal value
-  on long routes.
-
-No third-party dependencies.
+  radius (6371.0088 km).  Differs from the ellipsoidal value by up to about
+  ±0.35 % (sign depends on the route); kept as an option only.
 """
 from __future__ import annotations
 
 import math
+
+try:  # optional at import time so the package still loads without geographiclib
+    from geographiclib.geodesic import Geodesic as _Geodesic
+    _WGS84 = _Geodesic.WGS84
+    HAVE_GEOGRAPHICLIB = True
+except Exception:  # pragma: no cover – exercised only when the dependency is missing
+    _WGS84 = None
+    HAVE_GEOGRAPHICLIB = False
 
 # WGS-84 constants
 WGS84_A = 6378137.0                 # semi-major axis (m)
@@ -20,7 +33,8 @@ WGS84_F = 1 / 298.257223563         # flattening
 WGS84_B = WGS84_A * (1 - WGS84_F)   # semi-minor axis (m)
 MEAN_RADIUS_KM = 6371.0088          # WGS-84 mean radius (km)
 
-METHODS = ("vincenty", "haversine")
+METHODS = ("geodesic", "vincenty", "haversine")
+DEFAULT_METHOD = "geodesic"
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -87,9 +101,18 @@ def vincenty_km(lat1: float, lon1: float, lat2: float, lon2: float,
     return b * A * (sigma - delta_sigma) / 1000.0
 
 
+def geodesic_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """GeographicLib WGS-84 inverse geodesic (what greatcirclemap.com computes), in km."""
+    if _WGS84 is None:
+        return vincenty_km(lat1, lon1, lat2, lon2)
+    return _WGS84.Inverse(lat1, lon1, lat2, lon2)["s12"] / 1000.0
+
+
 def distance_km(lat1: float, lon1: float, lat2: float, lon2: float,
-                method: str = "vincenty") -> float:
-    """Dispatch on *method* (``vincenty`` or ``haversine``)."""
+                method: str = DEFAULT_METHOD) -> float:
+    """Dispatch on *method* (``geodesic``, ``vincenty`` or ``haversine``)."""
+    if method == "geodesic":
+        return geodesic_km(lat1, lon1, lat2, lon2)
     if method == "vincenty":
         return vincenty_km(lat1, lon1, lat2, lon2)
     if method == "haversine":
@@ -98,8 +121,16 @@ def distance_km(lat1: float, lon1: float, lat2: float, lon2: float,
 
 
 def round_km(km: float, decimals: int = 0):
-    """Round half-up; returns ``int`` when *decimals* is 0."""
+    """Round half-UP (like JavaScript ``Math.round``, unlike Python's banker's rounding).
+
+    Returns ``int`` when *decimals* is 0 – the site shows ``Math.round(s12 / 1000)``.
+    """
     if decimals <= 0:
         return int(math.floor(km + 0.5))
     factor = 10 ** decimals
     return math.floor(km * factor + 0.5) / factor
+
+
+def site_km(lat1: float, lon1: float, lat2: float, lon2: float) -> int:
+    """The integer greatcirclemap.com would display for these coordinates."""
+    return round_km(geodesic_km(lat1, lon1, lat2, lon2))

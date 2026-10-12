@@ -4,6 +4,13 @@ A row is HSR-like when BOTH endpoints lie on the HSR corridor – either by
 station/city name (新竹, 台北, 高雄 …) or by an airport serving a corridor
 city (TSA, TPE, RMQ, TNN, KHH, CYI).  Outlying islands (澎湖 MZG, 金門 KNH,
 馬祖 LZN/MFK, 台東, 花蓮 …) are never HSR-like.
+
+Exceptions:
+
+* both endpoints resolve to the *same* station (桃園↔TPE, 台北↔TSA) – that is
+  not a trip at all, so it is left to the normal path (distance 0, report note);
+* the pair is a real scheduled domestic connecting flight entered as airport
+  codes (TPE↔KHH, China Airlines' international-transfer leg).
 """
 from __future__ import annotations
 
@@ -29,6 +36,13 @@ _ALIASES: Dict[str, str] = {
     "高雄": "左營", "高雄市": "左營", "新左營": "左營", "KAOHSIUNG": "左營", "ZUOYING": "左營",
 }
 
+# Real domestic flights between corridor airports (entered as codes) – not HSR.
+CONNECTING_FLIGHT_PAIRS = {frozenset({"TPE", "KHH"})}
+
+# Prefixes / suffixes stripped before matching a station name: 高鐵台中, 台中站, 台北車站
+_STATION_PREFIXES = ("台灣高鐵", "臺灣高鐵", "高鐵", "THSR")
+_STATION_SUFFIXES = ("車站", "站")
+
 # Airports serving HSR-corridor cities → canonical station
 CORRIDOR_AIRPORTS: Dict[str, str] = {
     "TSA": "台北",   # 松山
@@ -40,16 +54,30 @@ CORRIDOR_AIRPORTS: Dict[str, str] = {
 }
 
 
+def _strip_station_affixes(key: str) -> str:
+    for prefix in _STATION_PREFIXES:
+        if key.startswith(prefix) and len(key) > len(prefix):
+            key = key[len(prefix):].strip()
+            break
+    for suffix in _STATION_SUFFIXES:
+        if key.endswith(suffix) and len(key) > len(suffix):
+            key = key[:-len(suffix)].strip()
+            break
+    return key
+
+
 def station_for(raw_value, iata: Optional[str] = None) -> Optional[str]:
     """Return the canonical HSR station for an endpoint, or None.
 
-    The raw (name) value is checked first, then the resolved IATA code.
+    The raw (name) value is checked first (also without 高鐵/站 affixes), then
+    the resolved IATA code.
     """
     key = normalize(raw_value)
-    if key in HSR_STATIONS:
-        return key
-    if key in _ALIASES:
-        return _ALIASES[key]
+    for k in (key, _strip_station_affixes(key)):
+        if k in HSR_STATIONS:
+            return k
+        if k in _ALIASES:
+            return _ALIASES[k]
     for code in (key, normalize(iata) if iata else ""):
         if code in CORRIDOR_AIRPORTS:
             return CORRIDOR_AIRPORTS[code]
@@ -60,7 +88,12 @@ def is_hsr_like(origin_raw, dest_raw, origin_iata: Optional[str] = None,
                 dest_iata: Optional[str] = None) -> bool:
     a = station_for(origin_raw, origin_iata)
     b = station_for(dest_raw, dest_iata)
-    return a is not None and b is not None
+    if a is None or b is None or a == b:
+        return False
+    ko, kd = normalize(origin_raw), normalize(dest_raw)
+    if ko in CORRIDOR_AIRPORTS and kd in CORRIDOR_AIRPORTS and frozenset({ko, kd}) in CONNECTING_FLIGHT_PAIRS:
+        return False
+    return True
 
 
 def hsr_note(origin_raw, dest_raw) -> str:

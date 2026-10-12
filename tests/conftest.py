@@ -8,28 +8,32 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from miles_inquiry.airports import Airport, AirportDB  # noqa: E402
+from miles_inquiry.airports import SOURCE_OURAIRPORTS, Airport, AirportDB  # noqa: E402
 from miles_inquiry.lookup import Lookup  # noqa: E402
 
-# Small synthetic airport set – no dependency on data/airports.csv for unit tests.
+# Small synthetic airport set – no dependency on data/ files for unit tests.
+# Coordinates are the 3-decimal values from greatcirclemap.com's airports.csv, so
+# distances equal what the website displays (TPE-JFK 12566, MZG-KHH 132, TSA-MZG 256).
 SYNTH_AIRPORTS = [
-    Airport("TPE", "Taiwan Taoyuan International Airport", "Taoyuan", "TW", "large_airport", 25.0777, 121.233002),
-    Airport("TSA", "Taipei Songshan International Airport", "Taipei", "TW", "large_airport", 25.067244, 121.552822),
-    Airport("KHH", "Kaohsiung International Airport", "Kaohsiung", "TW", "large_airport", 22.577101, 120.349998),
-    Airport("RMQ", "Taichung International Airport", "Taichung", "TW", "large_airport", 24.2647, 120.621002),
-    Airport("MZG", "Penghu Magong Airport", "Huxi", "TW", "large_airport", 23.568701, 119.627998),
-    Airport("KNH", "Kinmen Airport", "Shang-I", "TW", "medium_airport", 24.4279, 118.359001),
-    Airport("JFK", "John F. Kennedy International Airport", "New York", "US", "large_airport", 40.639447, -73.779317),
-    Airport("HKG", "Hong Kong International Airport", "Hong Kong", "HK", "large_airport", 22.31184, 113.914862),
-    Airport("SEA", "Seattle–Tacoma International Airport", "Seattle", "US", "large_airport", 47.447943, -122.310276),
-    Airport("LAX", "Los Angeles International Airport", "Los Angeles", "US", "large_airport", 33.942501, -118.407997),
-    Airport("TAS", "Tashkent International Airport", "Tashkent", "UZ", "large_airport", 41.2579, 69.281197),
-    Airport("SIA", "Xi'an Xiguan Airport", "Xi'an", "CN", "medium_airport", 34.376701, 109.120003, scheduled_service=False),
-    Airport("PNH", "Phnom Penh International Airport", "Phnom Penh", "KH", "large_airport", 11.547155, 104.844699, scheduled_service=False),
-    Airport("SAI", "Siem Reap-Angkor International Airport", "Siem Reap", "KH", "large_airport", 13.36974, 104.223831),
+    Airport("TPE", "Taiwan Taoyuan International Airport", "Taipei", "TW", "large_airport", 25.078, 121.233),
+    Airport("TSA", "Taipei Songshan Airport", "Taipei", "TW", "large_airport", 25.069, 121.552),
+    Airport("KHH", "Kaohsiung International Airport", "Kaohsiung", "TW", "large_airport", 22.577, 120.350),
+    Airport("RMQ", "Taichung Ching Chuang Kang Airport", "Taichung", "TW", "large_airport", 24.265, 120.621),
+    Airport("MZG", "Makung Airport", "Makung", "TW", "large_airport", 23.569, 119.628),
+    Airport("KNH", "Kinmen Airport", "Kinmen", "TW", "medium_airport", 24.428, 118.359),
+    Airport("JFK", "John F Kennedy International Airport", "New York", "US", "large_airport", 40.640, -73.779),
+    Airport("HKG", "Hong Kong International Airport", "Hong Kong", "HK", "large_airport", 22.309, 113.915),
+    Airport("SEA", "Seattle Tacoma International Airport", "Seattle", "US", "large_airport", 47.449, -122.309),
+    Airport("LAX", "Los Angeles International Airport", "Los Angeles", "US", "large_airport", 33.942, -118.408),
+    Airport("TAS", "Tashkent International Airport", "Tashkent", "UZ", "large_airport", 41.258, 69.281),
+    Airport("SIA", "Xi'an Xiguan Airport", "Xi'an", "CN", "medium_airport", 34.377, 109.120, scheduled_service=False),
+    Airport("PNH", "Phnom Penh International Airport", "Phnom Penh", "KH", "large_airport", 11.547, 104.844, scheduled_service=False),
+    # SAI is absent from the website's data → coordinates come from OurAirports (fallback)
+    Airport("SAI", "Siem Reap-Angkor International Airport", "Siem Reap", "KH", "large_airport", 13.36974, 104.223831,
+            source=SOURCE_OURAIRPORTS),
 ]
 
-LOOKUP_CSV = "\ufeff" + """value,iata,review,note
+LOOKUP_CSV = "﻿" + """value,iata,review,note
 # comment line
 澎湖,MZG,,
 高雄,KHH,,

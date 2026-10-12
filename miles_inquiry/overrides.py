@@ -6,11 +6,12 @@ figures read off https://www.greatcirclemap.com/ when they must match.
 from __future__ import annotations
 
 import csv
+import io
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
-from .lookup import normalize
+from .lookup import normalize, read_csv_text
 
 
 @dataclass(frozen=True)
@@ -39,7 +40,7 @@ class Overrides:
         table: Dict[Tuple[str, str], Override] = {}
         if path is None or not Path(path).is_file():
             return cls(table)
-        with Path(path).open("r", encoding="utf-8-sig", newline="") as fh:
+        with io.StringIO(read_csv_text(Path(path)), newline="") as fh:
             header_seen = False
             for row in csv.reader(fh):
                 if not row or all(not c.strip() for c in row) or row[0].strip().startswith("#"):
