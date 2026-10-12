@@ -1,0 +1,4 @@
+﻿from,to,km,source
+# 對稱的精確距離覆寫（A,B 與 B,A 相同）。把 https://www.greatcirclemap.com/ 顯示的數字貼進來即可。
+# 範例（移除開頭的 # 即生效）：
+#TPE,JFK,12566,greatcirclemap.com 2026-10-12

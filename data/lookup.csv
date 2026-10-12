@@ -1,0 +1,574 @@
+﻿value,iata,review,note
+# 使用者維護的對應表：value=活頁簿中的原始值，iata=三碼機場代碼（留空=已知無法對應，距離留空並寫備註），
+# review=yes 表示「可對應，但每次都把 note 寫入活頁簿備註請人工確認」，note=說明（一律寫入報表）。
+# 以 # 開頭的列為註解。比對時忽略大小寫、全半形與前後空白（kHH、ＫＨＨ、Taipei/TAIPEI 視為相同），所以每個拼法只需列一次。
+# 本身已是 airports.csv 內的 3 碼代碼（如 KHH、TPE）不必列入，會直接使用；有列的一律優先（可做 TAS→TSA 這類誤植修正）。
+# 「無」「0」「-」「N/A」或人次=0 的列會自動排除，不需列入。
+#
+# ===== 台灣 =====
+台北,TSA,yes,預設松山 TSA（國內/離島線）；國際線多為桃園 TPE，請依航段確認
+臺北,TSA,yes,預設松山 TSA（國內/離島線）；國際線多為桃園 TPE，請依航段確認
+台北市,TSA,yes,預設松山 TSA（國內/離島線）；國際線多為桃園 TPE，請依航段確認
+臺北市,TSA,yes,預設松山 TSA（國內/離島線）；國際線多為桃園 TPE，請依航段確認
+Taipei,TSA,yes,預設松山 TSA（國內/離島線）；國際線多為桃園 TPE，請依航段確認
+松山,TSA,,台北松山機場
+台北松山,TSA,,台北松山機場
+臺北松山,TSA,,台北松山機場
+松山機場,TSA,,台北松山機場
+Songshan,TSA,,台北松山機場
+Taipei Songshan,TSA,,台北松山機場
+桃園,TPE,,台灣桃園國際機場（桃園亦為高鐵站名）
+桃园,TPE,,台灣桃園國際機場（桃園亦為高鐵站名）
+桃園機場,TPE,,台灣桃園國際機場（桃園亦為高鐵站名）
+桃園國際機場,TPE,,台灣桃園國際機場（桃園亦為高鐵站名）
+台灣桃園,TPE,,台灣桃園國際機場（桃園亦為高鐵站名）
+臺灣桃園,TPE,,台灣桃園國際機場（桃園亦為高鐵站名）
+台北桃園,TPE,,台灣桃園國際機場（桃園亦為高鐵站名）
+中正機場,TPE,,台灣桃園國際機場（桃園亦為高鐵站名）
+Taoyuan,TPE,,台灣桃園國際機場（桃園亦為高鐵站名）
+Taiwan Taoyuan,TPE,,台灣桃園國際機場（桃園亦為高鐵站名）
+高雄,KHH,,高雄國際機場（小港）
+高雄市,KHH,,高雄國際機場（小港）
+小港,KHH,,高雄國際機場（小港）
+高雄小港,KHH,,高雄國際機場（小港）
+高雄機場,KHH,,高雄國際機場（小港）
+小港機場,KHH,,高雄國際機場（小港）
+Kaohsiung,KHH,,高雄國際機場（小港）
+台中,RMQ,,台中國際機場（清泉崗）
+臺中,RMQ,,台中國際機場（清泉崗）
+台中市,RMQ,,台中國際機場（清泉崗）
+臺中市,RMQ,,台中國際機場（清泉崗）
+清泉崗,RMQ,,台中國際機場（清泉崗）
+台中清泉崗,RMQ,,台中國際機場（清泉崗）
+Taichung,RMQ,,台中國際機場（清泉崗）
+台南,TNN,,台南機場
+臺南,TNN,,台南機場
+台南市,TNN,,台南機場
+臺南市,TNN,,台南機場
+Tainan,TNN,,台南機場
+嘉義,CYI,,嘉義機場（水上）
+嘉义,CYI,,嘉義機場（水上）
+嘉義市,CYI,,嘉義機場（水上）
+水上,CYI,,嘉義機場（水上）
+Chiayi,CYI,,嘉義機場（水上）
+花蓮,HUN,,花蓮機場
+花莲,HUN,,花蓮機場
+花蓮市,HUN,,花蓮機場
+Hualien,HUN,,花蓮機場
+台東,TTT,,台東豐年機場
+臺東,TTT,,台東豐年機場
+台东,TTT,,台東豐年機場
+台東市,TTT,,台東豐年機場
+豐年,TTT,,台東豐年機場
+Taitung,TTT,,台東豐年機場
+澎湖,MZG,,澎湖馬公機場
+馬公,MZG,,澎湖馬公機場
+马公,MZG,,澎湖馬公機場
+澎湖馬公,MZG,,澎湖馬公機場
+澎湖機場,MZG,,澎湖馬公機場
+Penghu,MZG,,澎湖馬公機場
+Magong,MZG,,澎湖馬公機場
+七美,CMJ,,七美機場（德安航空小飛機）
+Qimei,CMJ,,七美機場（德安航空小飛機）
+望安,WOT,,望安機場（德安航空小飛機）
+Wangan,WOT,,望安機場（德安航空小飛機）
+金門,KNH,,金門尚義機場
+金门,KNH,,金門尚義機場
+尚義,KNH,,金門尚義機場
+尚义,KNH,,金門尚義機場
+金門尚義,KNH,,金門尚義機場
+Kinmen,KNH,,金門尚義機場
+Jinmen,KNH,,金門尚義機場
+馬祖,LZN,yes,馬祖有南竿 LZN／北竿 MFK 兩機場，預設南竿，請確認
+马祖,LZN,yes,馬祖有南竿 LZN／北竿 MFK 兩機場，預設南竿，請確認
+Matsu,LZN,yes,馬祖有南竿 LZN／北竿 MFK 兩機場，預設南竿，請確認
+南竿,LZN,,馬祖南竿機場
+馬祖南竿,LZN,,馬祖南竿機場
+Nangan,LZN,,馬祖南竿機場
+北竿,MFK,,馬祖北竿機場
+馬祖北竿,MFK,,馬祖北竿機場
+Beigan,MFK,,馬祖北竿機場
+綠島,GNI,,綠島機場（德安航空小飛機）
+绿岛,GNI,,綠島機場（德安航空小飛機）
+Green Island,GNI,,綠島機場（德安航空小飛機）
+Ludao,GNI,,綠島機場（德安航空小飛機）
+蘭嶼,KYD,,蘭嶼機場
+兰屿,KYD,,蘭嶼機場
+Orchid Island,KYD,,蘭嶼機場
+Lanyu,KYD,,蘭嶼機場
+恆春,HCN,yes,恆春機場目前無定期航班，請確認
+恒春,HCN,yes,恆春機場目前無定期航班，請確認
+Hengchun,HCN,yes,恆春機場目前無定期航班，請確認
+#
+# ===== 台灣：無機場的高鐵站／城市（iata 留空；兩端皆在高鐵走廊時會標為疑似高鐵） =====
+新竹,,,新竹無民航機場（HSZ 為空軍基地）；多為高鐵誤植
+新竹市,,,新竹無民航機場（HSZ 為空軍基地）；多為高鐵誤植
+新竹縣,,,新竹無民航機場（HSZ 為空軍基地）；多為高鐵誤植
+竹北,,,新竹無民航機場（HSZ 為空軍基地）；多為高鐵誤植
+Hsinchu,,,新竹無民航機場（HSZ 為空軍基地）；多為高鐵誤植
+苗栗,,,無機場；高鐵站
+彰化,,,無機場；高鐵站
+雲林,,,無機場；高鐵站
+云林,,,無機場；高鐵站
+板橋,,,無機場；高鐵站
+南港,,,無機場；高鐵站
+左營,,,無機場；高鐵站（高雄機場為 KHH）
+左营,,,無機場；高鐵站（高雄機場為 KHH）
+屏東,,,屏東機場已停用；請人工確認（多為 KHH 或陸運）
+屏东,,,屏東機場已停用；請人工確認（多為 KHH 或陸運）
+Pingtung,,,屏東機場已停用；請人工確認（多為 KHH 或陸運）
+#
+# ===== 港澳 =====
+香港,HKG,,香港國際機場
+HONG KONG,HKG,,香港國際機場
+HongKong,HKG,,香港國際機場
+HK,HKG,,香港國際機場
+香港機場,HKG,,香港國際機場
+香港机场,HKG,,香港國際機場
+澳門,MFM,,澳門國際機場
+澳门,MFM,,澳門國際機場
+Macau,MFM,,澳門國際機場
+Macao,MFM,,澳門國際機場
+#
+# ===== 中國大陸 =====
+上海,SHA,,上海預設虹橋 SHA（本行兩岸／大陸國內線皆用 SHA）；浦東為 PVG
+Shanghai,SHA,,上海預設虹橋 SHA（本行兩岸／大陸國內線皆用 SHA）；浦東為 PVG
+上海虹橋,SHA,,上海虹橋
+上海虹桥,SHA,,上海虹橋
+虹橋,SHA,,上海虹橋
+虹桥,SHA,,上海虹橋
+Hongqiao,SHA,,上海虹橋
+Shanghai Hongqiao,SHA,,上海虹橋
+上海浦東,PVG,,上海浦東
+上海浦东,PVG,,上海浦東
+浦東,PVG,,上海浦東
+浦东,PVG,,上海浦東
+Pudong,PVG,,上海浦東
+Shanghai Pudong,PVG,,上海浦東
+北京,PEK,,北京預設首都 PEK；大興為 PKX
+Beijing,PEK,,北京預設首都 PEK；大興為 PKX
+北京首都,PEK,,北京首都國際機場
+首都機場,PEK,,北京首都國際機場
+首都机场,PEK,,北京首都國際機場
+Beijing Capital,PEK,,北京首都國際機場
+北京大興,PKX,,北京大興國際機場
+北京大兴,PKX,,北京大興國際機場
+大興,PKX,,北京大興國際機場
+大兴,PKX,,北京大興國際機場
+Daxing,PKX,,北京大興國際機場
+Beijing Daxing,PKX,,北京大興國際機場
+深圳,SZX,,深圳寶安國際機場
+深圳寶安,SZX,,深圳寶安國際機場
+深圳宝安,SZX,,深圳寶安國際機場
+Shenzhen,SZX,,深圳寶安國際機場
+廣州,CAN,,廣州白雲國際機場
+广州,CAN,,廣州白雲國際機場
+廣州白雲,CAN,,廣州白雲國際機場
+广州白云,CAN,,廣州白雲國際機場
+Guangzhou,CAN,,廣州白雲國際機場
+蘇州,,,蘇州無民航機場（SZV 無定期航班）；鄰近 SHA 虹橋／WUX 無錫碩放，請人工指定
+苏州,,,蘇州無民航機場（SZV 無定期航班）；鄰近 SHA 虹橋／WUX 無錫碩放，請人工指定
+Suzhou,,,蘇州無民航機場（SZV 無定期航班）；鄰近 SHA 虹橋／WUX 無錫碩放，請人工指定
+無錫,WUX,,蘇南碩放國際機場（無錫）
+无锡,WUX,,蘇南碩放國際機場（無錫）
+蘇南,WUX,,蘇南碩放國際機場（無錫）
+苏南,WUX,,蘇南碩放國際機場（無錫）
+碩放,WUX,,蘇南碩放國際機場（無錫）
+硕放,WUX,,蘇南碩放國際機場（無錫）
+Wuxi,WUX,,蘇南碩放國際機場（無錫）
+南京,NKG,,南京祿口
+Nanjing,NKG,,南京祿口
+南通,NTG,,南通興東
+Nantong,NTG,,南通興東
+淮安,HIA,,淮安漣水
+Huaian,HIA,,淮安漣水
+Huai'an,HIA,,淮安漣水
+徐州,XUZ,,徐州觀音
+Xuzhou,XUZ,,徐州觀音
+連雲港,LYG,,連雲港花果山
+连云港,LYG,,連雲港花果山
+Lianyungang,LYG,,連雲港花果山
+常州,CZX,,常州奔牛
+Changzhou,CZX,,常州奔牛
+揚州,YTY,,揚州泰州
+扬州,YTY,,揚州泰州
+Yangzhou,YTY,,揚州泰州
+杭州,HGH,,杭州蕭山
+Hangzhou,HGH,,杭州蕭山
+寧波,NGB,,寧波櫟社
+宁波,NGB,,寧波櫟社
+Ningbo,NGB,,寧波櫟社
+溫州,WNZ,,溫州龍灣
+温州,WNZ,,溫州龍灣
+Wenzhou,WNZ,,溫州龍灣
+義烏,YIW,,義烏機場
+义乌,YIW,,義烏機場
+Yiwu,YIW,,義烏機場
+合肥,HFE,,合肥新橋
+Hefei,HFE,,合肥新橋
+黃山,TXN,,黃山屯溪
+黄山,TXN,,黃山屯溪
+Huangshan,TXN,,黃山屯溪
+天津,TSN,,天津濱海
+Tianjin,TSN,,天津濱海
+石家莊,SJW,,石家莊正定
+石家庄,SJW,,石家莊正定
+Shijiazhuang,SJW,,石家莊正定
+濟南,TNA,,濟南遙牆
+济南,TNA,,濟南遙牆
+Jinan,TNA,,濟南遙牆
+青島,TAO,,青島膠東
+青岛,TAO,,青島膠東
+Qingdao,TAO,,青島膠東
+煙台,YNT,,煙台蓬萊
+烟台,YNT,,煙台蓬萊
+Yantai,YNT,,煙台蓬萊
+太原,TYN,,太原武宿
+Taiyuan,TYN,,太原武宿
+鄭州,CGO,,鄭州新鄭
+郑州,CGO,,鄭州新鄭
+Zhengzhou,CGO,,鄭州新鄭
+武漢,WUH,,武漢天河
+武汉,WUH,,武漢天河
+Wuhan,WUH,,武漢天河
+長沙,CSX,,長沙黃花
+长沙,CSX,,長沙黃花
+Changsha,CSX,,長沙黃花
+南昌,KHN,,南昌昌北
+Nanchang,KHN,,南昌昌北
+西安,XIY,,西安咸陽（勿用已停用之 SIA）
+Xian,XIY,,西安咸陽（勿用已停用之 SIA）
+Xi'an,XIY,,西安咸陽（勿用已停用之 SIA）
+蘭州,LHW,,蘭州中川
+兰州,LHW,,蘭州中川
+Lanzhou,LHW,,蘭州中川
+烏魯木齊,URC,,烏魯木齊天山
+乌鲁木齐,URC,,烏魯木齊天山
+Urumqi,URC,,烏魯木齊天山
+成都,CTU,,成都預設雙流 CTU（本行既有用法）；天府為 TFU
+Chengdu,CTU,,成都預設雙流 CTU（本行既有用法）；天府為 TFU
+成都雙流,CTU,,成都雙流
+成都双流,CTU,,成都雙流
+雙流,CTU,,成都雙流
+双流,CTU,,成都雙流
+成都天府,TFU,,成都天府
+天府,TFU,,成都天府
+Chengdu Tianfu,TFU,,成都天府
+重慶,CKG,,重慶江北
+重庆,CKG,,重慶江北
+Chongqing,CKG,,重慶江北
+昆明,KMG,,昆明長水
+Kunming,KMG,,昆明長水
+貴陽,KWE,,貴陽龍洞堡
+贵阳,KWE,,貴陽龍洞堡
+Guiyang,KWE,,貴陽龍洞堡
+廈門,XMN,,廈門高崎
+厦门,XMN,,廈門高崎
+Xiamen,XMN,,廈門高崎
+福州,FOC,,福州長樂
+Fuzhou,FOC,,福州長樂
+汕頭,SWA,,揭陽潮汕
+汕头,SWA,,揭陽潮汕
+Shantou,SWA,,揭陽潮汕
+珠海,ZUH,,珠海金灣
+Zhuhai,ZUH,,珠海金灣
+南寧,NNG,,南寧吳圩
+南宁,NNG,,南寧吳圩
+Nanning,NNG,,南寧吳圩
+桂林,KWL,,桂林兩江
+Guilin,KWL,,桂林兩江
+海口,HAK,,海口美蘭
+Haikou,HAK,,海口美蘭
+三亞,SYX,,三亞鳳凰
+三亚,SYX,,三亞鳳凰
+Sanya,SYX,,三亞鳳凰
+大連,DLC,,大連周水子
+大连,DLC,,大連周水子
+Dalian,DLC,,大連周水子
+瀋陽,SHE,,瀋陽桃仙
+沈阳,SHE,,瀋陽桃仙
+Shenyang,SHE,,瀋陽桃仙
+長春,CGQ,,長春龍嘉
+长春,CGQ,,長春龍嘉
+Changchun,CGQ,,長春龍嘉
+哈爾濱,HRB,,哈爾濱太平
+哈尔滨,HRB,,哈爾濱太平
+Harbin,HRB,,哈爾濱太平
+#
+# ===== 日本 =====
+東京,HND,,東京預設羽田 HND（本行東京分行用法）；成田為 NRT
+东京,HND,,東京預設羽田 HND（本行東京分行用法）；成田為 NRT
+Tokyo,HND,,東京預設羽田 HND（本行東京分行用法）；成田為 NRT
+羽田,HND,,東京羽田
+東京羽田,HND,,東京羽田
+东京羽田,HND,,東京羽田
+Haneda,HND,,東京羽田
+成田,NRT,,東京成田
+東京成田,NRT,,東京成田
+东京成田,NRT,,東京成田
+Narita,NRT,,東京成田
+大阪,KIX,,大阪預設關西 KIX；國內線多用伊丹 ITM
+Osaka,KIX,,大阪預設關西 KIX；國內線多用伊丹 ITM
+關西,KIX,,關西國際機場
+关西,KIX,,關西國際機場
+大阪關西,KIX,,關西國際機場
+大阪关西,KIX,,關西國際機場
+Kansai,KIX,,關西國際機場
+伊丹,ITM,,大阪伊丹
+大阪伊丹,ITM,,大阪伊丹
+Itami,ITM,,大阪伊丹
+名古屋,NGO,,中部國際機場
+Nagoya,NGO,,中部國際機場
+福岡,FUK,,福岡機場
+福冈,FUK,,福岡機場
+Fukuoka,FUK,,福岡機場
+熊本,KMJ,,熊本機場
+Kumamoto,KMJ,,熊本機場
+札幌,CTS,,新千歲機場
+Sapporo,CTS,,新千歲機場
+沖繩,OKA,,那霸機場
+冲绳,OKA,,那霸機場
+那霸,OKA,,那霸機場
+Okinawa,OKA,,那霸機場
+Naha,OKA,,那霸機場
+#
+# ===== 韓國 =====
+首爾,ICN,,首爾預設仁川 ICN；金浦為 GMP（TSA↔GMP 線）
+首尔,ICN,,首爾預設仁川 ICN；金浦為 GMP（TSA↔GMP 線）
+漢城,ICN,,首爾預設仁川 ICN；金浦為 GMP（TSA↔GMP 線）
+Seoul,ICN,,首爾預設仁川 ICN；金浦為 GMP（TSA↔GMP 線）
+仁川,ICN,,仁川國際機場
+Incheon,ICN,,仁川國際機場
+金浦,GMP,,首爾金浦
+Gimpo,GMP,,首爾金浦
+釜山,PUS,,釜山金海
+Busan,PUS,,釜山金海
+濟州,CJU,,濟州國際機場
+济州,CJU,,濟州國際機場
+Jeju,CJU,,濟州國際機場
+大邱,TAE,,大邱國際機場
+Daegu,TAE,,大邱國際機場
+#
+# ===== 東南亞 =====
+金邊,KTI,yes,金邊德崇 KTI（2025-09 取代 PNH）；2025-09 前行程請改 PNH
+金边,KTI,yes,金邊德崇 KTI（2025-09 取代 PNH）；2025-09 前行程請改 PNH
+Phnom Penh,KTI,yes,金邊德崇 KTI（2025-09 取代 PNH）；2025-09 前行程請改 PNH
+暹粒,SAI,,暹粒吳哥國際機場（2023-10 取代 REP）
+暹粒吳哥,SAI,,暹粒吳哥國際機場（2023-10 取代 REP）
+暹粒吴哥,SAI,,暹粒吳哥國際機場（2023-10 取代 REP）
+Siem Reap,SAI,,暹粒吳哥國際機場（2023-10 取代 REP）
+西哈努克,KOS,,西哈努克機場
+Sihanoukville,KOS,,西哈努克機場
+胡志明,SGN,,新山一國際機場
+胡志明市,SGN,,新山一國際機場
+西貢,SGN,,新山一國際機場
+西贡,SGN,,新山一國際機場
+Ho Chi Minh,SGN,,新山一國際機場
+Ho Chi Minh City,SGN,,新山一國際機場
+Saigon,SGN,,新山一國際機場
+河內,HAN,,河內內排
+河内,HAN,,河內內排
+Hanoi,HAN,,河內內排
+峴港,DAD,,峴港國際機場
+岘港,DAD,,峴港國際機場
+Da Nang,DAD,,峴港國際機場
+Danang,DAD,,峴港國際機場
+曼谷,BKK,,曼谷預設蘇凡納布 BKK；廊曼為 DMK
+Bangkok,BKK,,曼谷預設蘇凡納布 BKK；廊曼為 DMK
+素萬那普,BKK,,曼谷蘇凡納布
+素万那普,BKK,,曼谷蘇凡納布
+Suvarnabhumi,BKK,,曼谷蘇凡納布
+廊曼,DMK,,曼谷廊曼
+曼谷廊曼,DMK,,曼谷廊曼
+Don Mueang,DMK,,曼谷廊曼
+清邁,CNX,,清邁國際機場
+清迈,CNX,,清邁國際機場
+Chiang Mai,CNX,,清邁國際機場
+普吉,HKT,,普吉國際機場
+Phuket,HKT,,普吉國際機場
+新加坡,SIN,,新加坡樟宜
+Singapore,SIN,,新加坡樟宜
+樟宜,SIN,,新加坡樟宜
+Changi,SIN,,新加坡樟宜
+吉隆坡,KUL,,吉隆坡國際機場
+Kuala Lumpur,KUL,,吉隆坡國際機場
+馬尼拉,MNL,,馬尼拉尼諾伊艾奎諾
+马尼拉,MNL,,馬尼拉尼諾伊艾奎諾
+Manila,MNL,,馬尼拉尼諾伊艾奎諾
+克拉克,CRK,,克拉克國際機場
+Clark,CRK,,克拉克國際機場
+宿霧,CEB,,宿霧麥克坦
+宿务,CEB,,宿霧麥克坦
+Cebu,CEB,,宿霧麥克坦
+雅加達,CGK,,蘇加諾-哈達
+雅加达,CGK,,蘇加諾-哈達
+Jakarta,CGK,,蘇加諾-哈達
+峇里島,DPS,,峇里島伍拉賴
+巴厘岛,DPS,,峇里島伍拉賴
+Bali,DPS,,峇里島伍拉賴
+Denpasar,DPS,,峇里島伍拉賴
+仰光,RGN,,仰光國際機場
+Yangon,RGN,,仰光國際機場
+Rangoon,RGN,,仰光國際機場
+永珍,VTE,,永珍瓦岱
+万象,VTE,,永珍瓦岱
+Vientiane,VTE,,永珍瓦岱
+#
+# ===== 美洲 =====
+紐約,JFK,,紐約預設 JFK；另有 LGA、EWR（本行皆有使用）
+纽约,JFK,,紐約預設 JFK；另有 LGA、EWR（本行皆有使用）
+New York,JFK,,紐約預設 JFK；另有 LGA、EWR（本行皆有使用）
+New York City,JFK,,紐約預設 JFK；另有 LGA、EWR（本行皆有使用）
+NYC,JFK,,紐約預設 JFK；另有 LGA、EWR（本行皆有使用）
+甘迺迪,JFK,,紐約甘迺迪
+肯尼迪,JFK,,紐約甘迺迪
+Kennedy,JFK,,紐約甘迺迪
+拉瓜地亞,LGA,,紐約拉瓜地亞
+拉瓜迪亞,LGA,,紐約拉瓜地亞
+拉瓜迪亚,LGA,,紐約拉瓜地亞
+LaGuardia,LGA,,紐約拉瓜地亞
+紐華克,EWR,,紐華克自由國際機場
+纽瓦克,EWR,,紐華克自由國際機場
+Newark,EWR,,紐華克自由國際機場
+休士頓,IAH,,休士頓預設洲際 IAH（本行休士頓分行用法）；Hobby 為 HOU
+休斯頓,IAH,,休士頓預設洲際 IAH（本行休士頓分行用法）；Hobby 為 HOU
+休斯敦,IAH,,休士頓預設洲際 IAH（本行休士頓分行用法）；Hobby 為 HOU
+Houston,IAH,,休士頓預設洲際 IAH（本行休士頓分行用法）；Hobby 為 HOU
+休士頓霍比,HOU,,休士頓 Hobby
+Hobby,HOU,,休士頓 Hobby
+洛杉磯,LAX,,洛杉磯國際機場
+洛杉矶,LAX,,洛杉磯國際機場
+Los Angeles,LAX,,洛杉磯國際機場
+安大略,ONT,,加州安大略機場（非加拿大安大略省）
+Ontario,ONT,,加州安大略機場（非加拿大安大略省）
+橙縣,SNA,,橙縣約翰韋恩
+橙县,SNA,,橙縣約翰韋恩
+Orange County,SNA,,橙縣約翰韋恩
+西雅圖,SEA,,西雅圖塔科馬
+西雅图,SEA,,西雅圖塔科馬
+Seattle,SEA,,西雅圖塔科馬
+舊金山,SFO,,舊金山國際機場
+旧金山,SFO,,舊金山國際機場
+三藩市,SFO,,舊金山國際機場
+San Francisco,SFO,,舊金山國際機場
+聖荷西,SJC,,聖荷西（加州）
+圣何塞,SJC,,聖荷西（加州）
+San Jose,SJC,,聖荷西（加州）
+聖地牙哥,SAN,,聖地牙哥
+圣地亚哥,SAN,,聖地牙哥
+San Diego,SAN,,聖地牙哥
+波特蘭,PDX,,波特蘭（奧勒岡）
+波特兰,PDX,,波特蘭（奧勒岡）
+Portland,PDX,,波特蘭（奧勒岡）
+拉斯維加斯,LAS,,拉斯維加斯
+拉斯维加斯,LAS,,拉斯維加斯
+Las Vegas,LAS,,拉斯維加斯
+鳳凰城,PHX,,鳳凰城天港
+凤凰城,PHX,,鳳凰城天港
+Phoenix,PHX,,鳳凰城天港
+丹佛,DEN,,丹佛國際機場
+Denver,DEN,,丹佛國際機場
+達拉斯,DFW,,達拉斯預設 DFW；Love Field 為 DAL
+达拉斯,DFW,,達拉斯預設 DFW；Love Field 為 DAL
+Dallas,DFW,,達拉斯預設 DFW；Love Field 為 DAL
+芝加哥,ORD,,芝加哥預設歐海爾 ORD；Midway 為 MDW
+Chicago,ORD,,芝加哥預設歐海爾 ORD；Midway 為 MDW
+亞特蘭大,ATL,,亞特蘭大
+亚特兰大,ATL,,亞特蘭大
+Atlanta,ATL,,亞特蘭大
+邁阿密,MIA,,邁阿密國際機場
+迈阿密,MIA,,邁阿密國際機場
+Miami,MIA,,邁阿密國際機場
+羅德岱堡,FLL,,羅德岱堡
+勞德岱堡,FLL,,羅德岱堡
+劳德代尔堡,FLL,,羅德岱堡
+Fort Lauderdale,FLL,,羅德岱堡
+坦帕,TPA,,坦帕國際機場
+Tampa,TPA,,坦帕國際機場
+奧蘭多,MCO,,奧蘭多國際機場
+奥兰多,MCO,,奧蘭多國際機場
+Orlando,MCO,,奧蘭多國際機場
+華盛頓,IAD,,華盛頓預設杜勒斯 IAD；另有 DCA、BWI
+华盛顿,IAD,,華盛頓預設杜勒斯 IAD；另有 DCA、BWI
+華盛頓特區,IAD,,華盛頓預設杜勒斯 IAD；另有 DCA、BWI
+Washington,IAD,,華盛頓預設杜勒斯 IAD；另有 DCA、BWI
+Washington DC,IAD,,華盛頓預設杜勒斯 IAD；另有 DCA、BWI
+波士頓,BOS,,波士頓羅根
+波士顿,BOS,,波士頓羅根
+Boston,BOS,,波士頓羅根
+檀香山,HNL,,檀香山
+夏威夷,HNL,,檀香山
+Honolulu,HNL,,檀香山
+Hawaii,HNL,,檀香山
+溫哥華,YVR,,溫哥華國際機場
+温哥华,YVR,,溫哥華國際機場
+Vancouver,YVR,,溫哥華國際機場
+多倫多,YYZ,,多倫多皮爾遜
+多伦多,YYZ,,多倫多皮爾遜
+Toronto,YYZ,,多倫多皮爾遜
+#
+# ===== 歐洲／中東 =====
+倫敦,LHR,,倫敦預設希斯洛 LHR；另有 LGW 等
+伦敦,LHR,,倫敦預設希斯洛 LHR；另有 LGW 等
+London,LHR,,倫敦預設希斯洛 LHR；另有 LGW 等
+希斯洛,LHR,,倫敦希斯洛
+Heathrow,LHR,,倫敦希斯洛
+巴黎,CDG,,巴黎戴高樂
+Paris,CDG,,巴黎戴高樂
+法蘭克福,FRA,,法蘭克福
+法兰克福,FRA,,法蘭克福
+Frankfurt,FRA,,法蘭克福
+阿姆斯特丹,AMS,,阿姆斯特丹史基浦
+Amsterdam,AMS,,阿姆斯特丹史基浦
+羅馬,FCO,,羅馬菲烏米奇諾
+罗马,FCO,,羅馬菲烏米奇諾
+Rome,FCO,,羅馬菲烏米奇諾
+米蘭,MXP,,米蘭馬爾彭薩
+米兰,MXP,,米蘭馬爾彭薩
+Milan,MXP,,米蘭馬爾彭薩
+馬德里,MAD,,馬德里
+马德里,MAD,,馬德里
+Madrid,MAD,,馬德里
+蘇黎世,ZRH,,蘇黎世
+苏黎世,ZRH,,蘇黎世
+Zurich,ZRH,,蘇黎世
+維也納,VIE,,維也納
+维也纳,VIE,,維也納
+Vienna,VIE,,維也納
+伊斯坦堡,IST,,伊斯坦堡
+伊斯坦布尔,IST,,伊斯坦堡
+Istanbul,IST,,伊斯坦堡
+杜拜,DXB,,杜拜國際機場
+迪拜,DXB,,杜拜國際機場
+Dubai,DXB,,杜拜國際機場
+杜哈,DOH,,杜哈哈馬德
+多哈,DOH,,杜哈哈馬德
+Doha,DOH,,杜哈哈馬德
+#
+# ===== 大洋洲 =====
+雪梨,SYD,,雪梨
+悉尼,SYD,,雪梨
+Sydney,SYD,,雪梨
+墨爾本,MEL,,墨爾本
+墨尔本,MEL,,墨爾本
+Melbourne,MEL,,墨爾本
+布里斯本,BNE,,布里斯本
+布里斯班,BNE,,布里斯本
+Brisbane,BNE,,布里斯本
+伯斯,PER,,伯斯
+珀斯,PER,,伯斯
+Perth,PER,,伯斯
+奧克蘭,AKL,,奧克蘭
+奥克兰,AKL,,奧克蘭
+Auckland,AKL,,奧克蘭
+關島,GUM,,關島
+关岛,GUM,,關島
+Guam,GUM,,關島
+#
+# ===== 修正／待確認（value 本身是代碼卻對應到別的代碼時，備註會自動寫入請人工確認） =====
+TAS,TSA,,TAS=塔什干；澎湖分行無此航線，應為 TSA 松山字母顛倒；若確為塔什干請刪除本列
+SIA,SAI,,SIA=西安西關舊碼已停用；暹粒支行應為暹粒吳哥 SAI（西安請用 XIY）
+REP,SAI,,REP 暹粒舊機場 2023-10 關閉，以 SAI 計算
+TAP,,,TAP=墨西哥塔帕丘拉；洛杉磯分行 LAX→TAP 疑為 TPE（或 TPA）誤植，請人工確認後改碼
+LGA/EWR,LGA,yes,原值含 LGA/EWR 兩機場，暫以 LGA 計算（至 IAH 差約 1%），請確認
+SZX,SZX,,SZX=深圳寶安（非蘇州）；苏州單位 SHA↔SZX、SZX↔WUX 等航線符合深圳實際航班，維持深圳；若實為蘇州請將本列 review 改為 yes 逐列確認

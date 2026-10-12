@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "miles-inquiry"
+version = "0.1.0"
+description = "碳盤查航空表：起迄站 → IATA 代碼 → 大圓距離 (km) 自動填入，並標記疑似高鐵列"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = ["openpyxl>=3.1"]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.scripts]
+miles-inquiry = "miles_inquiry.cli:main"
+
+[tool.setuptools]
+packages = ["miles_inquiry"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

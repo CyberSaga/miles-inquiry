@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.venv/
+venv/
+
+# Tool outputs (never commit workbooks – they may hold confidential data)
+*.xlsx
+*.xlsm
+*_report.csv
+*_距離*
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
