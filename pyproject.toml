@@ -17,6 +17,9 @@ test = ["pytest>=7"]
 [project.scripts]
 miles-inquiry = "miles_inquiry.cli:main"
 
+[project.gui-scripts]
+miles-inquiry-gui = "miles_inquiry.gui:main"
+
 [tool.setuptools]
 packages = ["miles_inquiry"]
 

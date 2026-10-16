@@ -4,6 +4,7 @@
     python -m miles_inquiry update-airports [...]
     python -m miles_inquiry verify-online (--report REPORT.csv | --routes TPE-JFK,MZG-KHH) [...]
     python -m miles_inquiry screenshots (--report REPORT.csv | --routes TPE-JFK,MZG-KHH) [--out DIR] [...]
+    python -m miles_inquiry gui [INPUT.xlsx]
 """
 from __future__ import annotations
 
@@ -98,6 +99,11 @@ def build_parser() -> argparse.ArgumentParser:
     _add_airport_args(s)
     _add_data_dir_arg(s)
     s.set_defaults(func=cmd_screenshots)
+
+    # gui ---------------------------------------------------------------------
+    g = sub.add_parser("gui", help="開啟圖形介面（選擇檔案、勾選選項後執行 fill）")
+    g.add_argument("input", nargs="?", default=None, help="預先帶入的 .xlsx（選用）")
+    g.set_defaults(func=cmd_gui)
     return p
 
 
@@ -210,6 +216,12 @@ def cmd_screenshots(args) -> int:
     print(summarize(results, out_dir))
     print(f"索引：{out_dir / 'index.csv'}、{out_dir / 'index.html'}")
     return 2 if any(r.status in ("mismatch", "error") for r in results) else 0
+
+
+def cmd_gui(args) -> int:
+    from .gui import main as gui_main
+
+    return gui_main(args.input)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

@@ -33,6 +33,17 @@ pip install -e .          # 或只 pip install openpyxl geographiclib
 Windows 使用者：把 `.xlsx` 直接**拖曳到 `fill.bat`** 上即可（需先安裝 Python 並勾選加入 PATH，再 `pip install openpyxl geographiclib`）。
 `fill.bat` 也可在命令列用 `fill.bat 檔案.xlsx` 執行（相對路徑以目前目錄為準）；檔案為 UTF-8＋CRLF，開頭的 `chcp 65001` 讓中文訊息正常顯示。
 
+## 圖形介面（GUI）
+
+```bash
+python -m miles_inquiry gui            # 或安裝後執行 miles-inquiry-gui
+```
+
+Windows：雙擊 **`gui.bat`**（或把 `.xlsx` 拖到 `gui.bat` 上，開啟時預先帶入該檔）。
+在視窗中選擇活頁簿、勾選選項（覆寫已有距離、保留原文、疑似高鐵仍填距離、不填碳排量、直接覆寫輸出檔），
+按「開始填入」即可；執行訊息顯示在下方，「開啟資料夾」可直接打開輸出檔所在位置。
+GUI 使用 Python 內建的 tkinter，不需另外安裝（Linux 若缺少請 `apt install python3-tk`）。
+
 ## 使用
 
 ```bash
