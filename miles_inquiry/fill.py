@@ -51,6 +51,7 @@ class Options:
     decimals: int = 0
     overwrite: bool = False
     fill_hsr_distance: bool = False
+    convert_names: bool = True     # replace 澎湖 / HONG KONG / TAS … in the station cells by the IATA code
     max_header_scan: int = 20
 
     def __post_init__(self):
@@ -211,6 +212,11 @@ def airport_source_note(ap) -> str:
     return f"{ap.iata} 不在 greatcirclemap 資料庫，座標取自 OurAirports（{ap.name}）"
 
 
+def converted_note(role: str, original: str, iata: str) -> str:
+    """備註 text when a station cell was rewritten from a name to its IATA code."""
+    return f"{role}原值「{original}」→{iata}"
+
+
 def unresolved_note(res: Resolution, lookup_name: str = "data/lookup.csv", role: str = "") -> str:
     if res.status == "blank":
         return f"{role or '起站/迄站'}空白，請補填"
@@ -351,10 +357,17 @@ def fill_workbook(input_path: Path, output_path: Path, lookup: Lookup,
                 continue
 
         # 3. mapping / correction / review notes ----------------------------
-        for role, res in (("起站", res_o), ("迄站", res_d)):
+        for role, res, cell in (("起站", res_o, o_cell), ("迄站", res_d, d_cell)):
             if res.status != "ok":
                 continue
             cell_note = res.note_for_cell
+            # 3a. a name or mistyped code becomes the IATA code; the original value is kept in 備註.
+            # HSR rows keep their text (they are train trips, and 新竹 has no airport at all).
+            if options.convert_names and not hsr and res.mapped:
+                original = str(cell.value).strip()
+                cell.value = res.iata
+                if not cell_note:   # correction / review notes already read "原值→代碼"
+                    add_cell_note(converted_note(role, original, res.iata))
             if cell_note:
                 add_cell_note(f"{role} {cell_note}")
             else:

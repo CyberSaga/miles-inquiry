@@ -1,7 +1,7 @@
 # miles-inquiry — 航空差旅距離自動填入工具
 
 把碳盤查活頁簿「航空」工作表中的 **航班(起站) / 航班(迄站)** 轉成 IATA 機場代碼、
-計算大圓距離（公里）填入 **距離** 欄，並把看起來像 **高鐵** 的列（例如 新竹↔台北、台中↔台北）標註在備註，請人工確認。
+計算大圓距離（公里）填入 **距離** 欄（起迄站若是地名，例如 HONG KONG、西雅圖、洛杉磯，會直接改成代碼，原值寫在備註），並把看起來像 **高鐵** 的列（例如 新竹↔台北、台中↔台北）標註在備註，請人工確認。
 
 **計算結果與 <https://www.greatcirclemap.com/> 顯示的數字完全相同**：
 
@@ -50,6 +50,7 @@ python -m miles_inquiry fill 碳盤查_2026-05.xlsx
 | `--overwrite` | 覆寫已有的距離 |
 | `--overwrite-output` | 輸出檔／報表已存在時直接覆寫（預設改存為 `檔名(2).xlsx`） |
 | `--fill-hsr-distance` | 疑似高鐵列仍填入飛航距離（預設留空） |
+| `--keep-names` | 起迄站保留原文，不改為 IATA 代碼（預設會改，見下） |
 | `--lookup PATH` / `--airports PATH` / `--fallback-airports PATH` / `--overrides PATH` | 自訂資料檔 |
 | `--data-dir DIR` | 一次指定資料目錄（預設專案 `data/`，亦可用環境變數 `MILES_INQUIRY_DATA`） |
 | `--report PATH` / `--no-report` | 報表路徑 / 不產生報表 |
@@ -78,7 +79,12 @@ python -m miles_inquiry fill 碳盤查_2026-05.xlsx
 * 代碼在網站資料與 OurAirports 相距超過 50 km（代碼已重新指派，如 `KTI` 網站仍是 Kratie、現為金邊德崇）：
   改用 OurAirports 座標並註明 `greatcirclemap 網站數字不適用`
 
-一般的中文→代碼對應（澎湖→MZG 等）只寫在報表，不佔用備註。
+### 起迄站改為 IATA 代碼
+
+起迄站是地名或誤植代碼時（`澎湖`、`HONG KONG`、`西雅圖`、`LGA/EWR`、`TAS`…），儲存格會直接改成對應的代碼，
+原值寫進備註：`迄站原值「HONG KONG」→HKG`（誤植修正與 `review=yes` 的備註本身已含「原值→代碼」，不再重複）。
+已經是代碼的值（含大小寫不同如 `kHH`）、無法對應的值、疑似高鐵列（火車行程，且新竹沒有機場）都保留原文。
+重跑輸出檔時代碼直接通過，不會再加備註。加 `--keep-names` 可保留原文（此時一般對應只寫在報表）。
 
 ## 資料檔（`data/`）
 
@@ -243,7 +249,10 @@ and computes the distance **exactly as <https://www.greatcirclemap.com/> display
 same airport coordinates (a snapshot of the site's `airports.csv`), the same algorithm
 (GeographicLib `Geodesic.WGS84.Inverse`, via the `geographiclib` package) and the same
 rounding (`Math.round`, i.e. half-up to whole km). Codes the site lacks (e.g. SAI, PKX, TFU)
-fall back to OurAirports coordinates and are flagged in 備註. A blank origin/destination next to a
+fall back to OurAirports coordinates and are flagged in 備註. Station cells holding a name or a
+mistyped code (澎湖, HONG KONG, 西雅圖, TAS…) are rewritten to the IATA code and the original value is
+noted in 備註 (`迄站原值「HONG KONG」→HKG`); codes, unresolved values and HSR rows keep their text
+(`--keep-names` disables the rewrite). A blank origin/destination next to a
 real trip is flagged (`起站空白，請補填`) rather than skipped; only 無/0/-/N/A or 人次=0 skip a row. Rows whose both endpoints lie on
 Taiwan's HSR corridor are flagged as probable HSR trips (`疑似高鐵(...)`, distance left blank
 unless `--fill-hsr-distance`).

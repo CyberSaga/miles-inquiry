@@ -44,6 +44,8 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument("--overwrite-output", action="store_true",
                    help="輸出檔/報表已存在時直接覆寫（預設改存為 檔名(2).xlsx，不覆蓋任何既有檔案）")
     f.add_argument("--fill-hsr-distance", action="store_true", help="疑似高鐵列仍填入飛航距離（預設留空）")
+    f.add_argument("--keep-names", action="store_true",
+                   help="起迄站保留原文（預設把 澎湖、HONG KONG 等改為 IATA 代碼，原值寫入備註）")
     f.add_argument("--lookup", type=Path, default=None, help="自訂 lookup.csv 路徑")
     _add_airport_args(f)
     f.add_argument("--overrides", type=Path, default=None, help="自訂 distance_overrides.csv 路徑")
@@ -127,7 +129,8 @@ def cmd_fill(args) -> int:
         print(f"注意：{output} 已存在，改寫入 {new_output}（加 --overwrite-output 可直接覆寫）")
         output = new_output
     options = Options(sheet=args.sheet, method=args.method, decimals=args.decimals,
-                      overwrite=args.overwrite, fill_hsr_distance=args.fill_hsr_distance)
+                      overwrite=args.overwrite, fill_hsr_distance=args.fill_hsr_distance,
+                      convert_names=not args.keep_names)
     summary = fill_workbook(args.input, output, lookup, overrides, options)
 
     report_path: Optional[Path] = None

@@ -169,8 +169,18 @@ def test_end_to_end(workbook, lookup, tmp_path):
     # correction note + "coordinates not from the site" note (SAI is absent from greatcirclemap data)
     assert ws["J16"].value == ("迄站 SIA→SAI 疑為代碼誤植（SIA 已停用）請確認；"
                                "迄站 SAI 不在 greatcirclemap 資料庫，座標取自 OurAirports（Siem Reap-Angkor International Airport）")
-    assert "greatcirclemap" not in ws["J4"].value if ws["J4"].value else True   # on-site codes get no such note
-    assert ws["J18"].value == "起站 台北→TSA：台北預設松山；國際線請改 TPE"
+    assert "greatcirclemap" not in ws["J4"].value                       # on-site codes get no such note
+    assert ws["J18"].value == "起站 台北→TSA：台北預設松山；國際線請改 TPE；迄站原值「澎湖」→MZG"
+    # names and mistyped codes become IATA codes; the original value is kept in 備註
+    assert (ws["E4"].value, ws["F4"].value) == ("MZG", "KHH")
+    assert ws["J4"].value == "起站原值「澎湖」→MZG；迄站原值「高雄」→KHH"
+    assert ws["F10"].value == "HKG" and ws["J10"].value == "迄站原值「HONG KONG」→HKG"
+    assert ws["E7"].value == "TSA" and ws["F16"].value == "SAI" and ws["E18"].value == "TSA"
+    assert ws["E9"].value == "TPE" and ws["F8"].value == "kHH"            # codes are left as typed
+    assert ws["E11"].value == "火星"                                       # unresolved: unchanged
+    # HSR rows keep their station names (train trips; 新竹 has no airport)
+    assert [(ws[f"E{r}"].value, ws[f"F{r}"].value) for r in (5, 6, 23)] == [
+        ("新竹", "台北"), ("台中", "台北"), ("台中站", "台北站")]
     assert "PNH" in ws["J19"].value and "無定期航班" in ws["J19"].value
     # HSR rows get ONLY the HSR note, not the 台北→TSA review note
     assert "台北→TSA" not in ws["J5"].value and "台北→TSA" not in ws["J6"].value
@@ -195,6 +205,14 @@ def test_rerun_is_idempotent(workbook, lookup, tmp_path):
         for c in range(1, ws1.max_column + 1):
             assert ws1.cell(r, c).value == ws2.cell(r, c).value, ws1.cell(r, c).coordinate
     assert s2.counts["kept"] >= 1 and s2.counts["filled"] == 0  # everything already filled is kept
+
+
+def test_keep_names_leaves_station_cells(workbook, lookup, tmp_path):
+    out = tmp_path / "keep.xlsx"
+    run(workbook, lookup, out, convert_names=False)
+    ws = openpyxl.load_workbook(out)["航空"]
+    assert (ws["E4"].value, ws["F4"].value, ws["F10"].value, ws["E7"].value) == ("澎湖", "高雄", "HONG KONG", "TAS")
+    assert ws["J4"].value is None and ws["G4"].value == 132
 
 
 def test_overwrite_and_fill_hsr(workbook, lookup, tmp_path):
