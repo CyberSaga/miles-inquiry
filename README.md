@@ -27,7 +27,7 @@
 ```bash
 git clone <this repo> miles-inquiry
 cd miles-inquiry
-pip install -e .          # 或只 pip install openpyxl geographiclib
+pip install -e .          # 或只 pip install openpyxl geographiclib tkinterdnd2
 ```
 
 Windows 使用者：把 `.xlsx` 直接**拖曳到 `fill.bat`** 上即可（需先安裝 Python 並勾選加入 PATH，再 `pip install openpyxl geographiclib`）。
@@ -37,13 +37,19 @@ Windows 使用者：把 `.xlsx` 直接**拖曳到 `fill.bat`** 上即可（需�
 ## 圖形介面（GUI）
 
 ```bash
-python -m miles_inquiry gui            # 或安裝後執行 miles-inquiry-gui
+python -m miles_inquiry gui            # 或安裝後執行 miles-inquiry-gui；可在後面接多個 .xlsx 預先加入
 ```
 
-Windows：雙擊 **`gui.bat`**（或把 `.xlsx` 拖到 `gui.bat` 上，開啟時預先帶入該檔）。
-在視窗中選擇活頁簿、勾選選項（覆寫已有距離、保留原文、疑似高鐵仍填距離、不填碳排量、直接覆寫輸出檔），
-按「開始填入」即可；執行訊息顯示在下方，「開啟資料夾」可直接打開輸出檔所在位置；勾選「完成後自動開啟輸出的 xlsx」（預設勾選）會在完成後用預設程式（Excel 等）開啟結果。
-GUI 使用 Python 內建的 tkinter，不需另外安裝（Linux 若缺少請 `apt install python3-tk`）。
+Windows：雙擊 **`gui.bat`**（或把一個／多個 `.xlsx` 拖到 `gui.bat` 上，開啟時預先加入清單）。
+
+* **加入檔案**：把 `.xlsx` 從檔案總管**拖曳進視窗**（一次多個、或分次拖曳都會累加；拖資料夾會加入其中所有 `.xlsx`），
+  或按「新增…」多選。重複的檔案、Excel 暫存檔 `~$*.xlsx` 會自動略過。
+* **剔除檔案**：在清單選取（Ctrl/Shift 可多選）後按「移除選取」或 Delete 鍵；「全部清除」清空清單。
+* 勾選選項後按「開始填入」，依序處理清單中每個檔案，「狀態」欄顯示 待處理／處理中／完成／失敗，執行訊息顯示在下方。
+* 「完成後自動開啟輸出的 xlsx」（預設勾選）會用預設程式（Excel 等）開啟每個成功的輸出檔；「開啟資料夾」打開選取檔案所在位置。
+
+拖曳功能需要 `tkinterdnd2`（`pip install -e .` 會一併安裝，或 `pip install tkinterdnd2`）；沒裝時 GUI 照常可用，只是不能拖曳。
+GUI 本身使用 Python 內建的 tkinter（Linux 若缺少請 `apt install python3-tk`）。
 
 ## 使用
 

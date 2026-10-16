@@ -1,15 +1,14 @@
 @echo off
-rem Double-click to open the GUI, or drop an .xlsx onto this file to preselect it.
+rem Double-click to open the GUI, or drop one or more .xlsx files onto this file to preselect them.
 rem Keep this file ASCII-only: cmd.exe misreads non-ASCII (UTF-8) lines in batch files.
 setlocal
-set "IN="
-if not "%~1"=="" set "IN=%~f1"
-cd /d "%~dp0"
+rem Do not cd: relative paths in %* stay valid; PYTHONPATH lets -m find the package.
+set "PYTHONPATH=%~dp0;%PYTHONPATH%"
 rem Prefer pythonw (no console window); the GUI shows its own error dialogs.
 where pythonw >nul 2>&1
 if errorlevel 1 goto console
-start "" pythonw -m miles_inquiry.gui "%IN%"
+start "" pythonw -m miles_inquiry.gui %*
 exit /b 0
 :console
-python -m miles_inquiry.gui "%IN%"
+python -m miles_inquiry.gui %*
 if errorlevel 1 pause

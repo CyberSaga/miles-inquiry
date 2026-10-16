@@ -4,7 +4,7 @@
     python -m miles_inquiry update-airports [...]
     python -m miles_inquiry verify-online (--report REPORT.csv | --routes TPE-JFK,MZG-KHH) [...]
     python -m miles_inquiry screenshots (--report REPORT.csv | --routes TPE-JFK,MZG-KHH) [--out DIR] [...]
-    python -m miles_inquiry gui [INPUT.xlsx]
+    python -m miles_inquiry gui [INPUT.xlsx ...]
 """
 from __future__ import annotations
 
@@ -101,8 +101,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_screenshots)
 
     # gui ---------------------------------------------------------------------
-    g = sub.add_parser("gui", help="開啟圖形介面（選擇檔案、勾選選項後執行 fill）")
-    g.add_argument("input", nargs="?", default=None, help="預先帶入的 .xlsx（選用）")
+    g = sub.add_parser("gui", help="開啟圖形介面（拖曳或選擇多個檔案、勾選選項後執行 fill）")
+    g.add_argument("input", nargs="*", default=[], help="預先加入清單的 .xlsx（選用，可多個）")
     g.set_defaults(func=cmd_gui)
     return p
 

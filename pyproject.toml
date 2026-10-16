@@ -9,7 +9,7 @@ description = "碳盤查航空表：起迄站 → IATA 代碼 → 大圓距離 (
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
-dependencies = ["openpyxl>=3.1", "geographiclib>=2.0"]
+dependencies = ["openpyxl>=3.1", "geographiclib>=2.0", "tkinterdnd2>=0.4"]
 
 [project.optional-dependencies]
 test = ["pytest>=7"]
