@@ -1,10 +1,11 @@
-"""高鐵表的 距離：台灣高鐵站間里程，加上人工維護的站對站距離。
+"""高鐵表的 距離：台灣高鐵官方站間碳足跡表換算的距離，加上人工維護的站對站距離。
 
 Data files (``data/``, UTF-8 with BOM, ``#`` lines are comments):
 
-``thsr_stations.csv`` – ``station,km,source``
-    Chainage (里程, km) of each THSR station along the line; distance between two
-    stations = |km_a − km_b|.
+``thsr_distances.csv`` – ``from,to,kg_co2e,km``
+    The 66 station pairs of THSRC's official「車站間旅客運輸碳足跡」table
+    (kg CO2e per passenger trip, label 29 gCO2e/pkm) with ``km = kg_co2e ÷ 0.029``,
+    so 距離 × 人次 × 0.029 reproduces THSRC's published footprint.  Direction-independent.
 
 ``hsr_lookup.csv`` – ``value,station,review,note``
     Spelling variants → station (臺北/台北車站→台北, 高雄→左營, 粄橋→板橋 …).  The
@@ -29,7 +30,7 @@ from typing import Dict, Optional, Tuple
 
 from .lookup import display, is_review_flag, normalize, read_csv_text
 
-STATIONS_FILENAME = "thsr_stations.csv"
+STATIONS_FILENAME = "thsr_distances.csv"
 LOOKUP_FILENAME = "hsr_lookup.csv"
 OVERRIDES_FILENAME = "rail_distance_overrides.csv"
 
@@ -54,13 +55,6 @@ def _rows(path: Path):
 
 
 @dataclass(frozen=True)
-class Station:
-    name: str
-    km: Optional[float]
-    source: str = ""
-
-
-@dataclass(frozen=True)
 class RailResolution:
     raw: str
     station: Optional[str]     # THSR station name, or None
@@ -74,14 +68,15 @@ class RailResolution:
 @dataclass(frozen=True)
 class RailDistance:
     km: Optional[float]
-    source: str                # 'thsr' | 'override' | ''
+    source: str                # 'thsr' | 'override' | 'missing_pair' | ''
     note: str = ""             # why km is None, or where it came from
 
 
 class RailData:
-    def __init__(self, stations: Dict[str, Station], lookup: Dict[str, Tuple[str, str, bool]],
+    def __init__(self, pairs: Dict[Tuple[str, str], float], lookup: Dict[str, Tuple[str, str, bool]],
                  overrides: Dict[Tuple[str, str], Tuple[float, str]], data_dir: Optional[Path] = None):
-        self.stations = stations
+        self.pairs = pairs              # (key_a, key_b) sorted → km (THSR)
+        self.stations = {name for pair in pairs for name in pair}
         self.lookup = lookup            # key → (station, note, review)
         self.overrides = overrides      # (key_a, key_b) sorted → (km, source)
         self.data_dir = data_dir
@@ -89,20 +84,18 @@ class RailData:
     @classmethod
     def load(cls, data_dir: Path) -> "RailData":
         data_dir = Path(data_dir)
-        stations: Dict[str, Station] = {}
+        pairs: Dict[Tuple[str, str], float] = {}
         path = data_dir / STATIONS_FILENAME
         if not path.is_file():
-            raise FileNotFoundError(f"找不到高鐵里程表 {path}")
+            raise FileNotFoundError(f"找不到高鐵站間距離表 {path}")
         for row in _rows(path):
-            name = station_key(row.get("station"))
-            if not name:
+            a, b = station_key(row.get("from")), station_key(row.get("to"))
+            if not a or not b:
                 continue
-            km_text = row.get("km", "")
             try:
-                km = float(km_text) if km_text else None
+                pairs[tuple(sorted((a, b)))] = float(row.get("km", ""))
             except ValueError:
-                raise ValueError(f"{path}: 「{row.get('station')}」的 km「{km_text}」不是數字") from None
-            stations[name] = Station(name, km, row.get("source", ""))
+                raise ValueError(f"{path}: {row.get('from')}-{row.get('to')} 的 km「{row.get('km')}」不是數字") from None
 
         lookup: Dict[str, Tuple[str, str, bool]] = {}
         path = data_dir / LOOKUP_FILENAME
@@ -126,7 +119,7 @@ class RailData:
                 except ValueError:
                     raise ValueError(f"{path}: {row.get('from')}-{row.get('to')} 的 km「{row['km']}」不是數字") from None
                 overrides[tuple(sorted((a, b)))] = (km, row.get("source", ""))
-        return cls(stations, lookup, overrides, data_dir)
+        return cls(pairs, lookup, overrides, data_dir)
 
     # -- resolving ---------------------------------------------------------
 
@@ -146,9 +139,10 @@ class RailData:
             km, source = self.overrides[keys]
             return RailDistance(km, "override", f"距離來自 {OVERRIDES_FILENAME}" + (f"（{source}）" if source else "")), ra, rb
         if ra.station and rb.station:
-            sa, sb = self.stations[ra.station], self.stations[rb.station]
-            missing = [s.name for s in (sa, sb) if s.km is None]
-            if missing:
-                return RailDistance(None, "missing_km", "、".join(missing)), ra, rb
-            return RailDistance(round(abs(sa.km - sb.km), 1), "thsr"), ra, rb
+            if ra.station == rb.station:
+                return RailDistance(0, "thsr", "起迄相同"), ra, rb
+            km = self.pairs.get(tuple(sorted((ra.station, rb.station))))
+            if km is None:
+                return RailDistance(None, "missing_pair", f"{ra.station}-{rb.station}"), ra, rb
+            return RailDistance(km, "thsr"), ra, rb
         return RailDistance(None, ""), ra, rb

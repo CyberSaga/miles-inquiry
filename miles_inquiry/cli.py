@@ -49,7 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="起迄站保留原文（預設把 澎湖、HONG KONG 等改為 IATA 代碼，原值寫入備註）")
     f.add_argument("--no-carbon", action="store_true", help="不填碳排量（預設以公式 =距離*人次*係數 填入航空與高鐵表）")
     f.add_argument("--no-hsr-distance", action="store_true",
-                   help="不填高鐵表距離（預設依 data/thsr_stations.csv、rail_distance_overrides.csv 填入）")
+                   help="不填高鐵表距離（預設依 data/thsr_distances.csv、rail_distance_overrides.csv 填入）")
     f.add_argument("--hsr-sheet", default=DEFAULT_HSR_SHEET, help=f"高鐵工作表名稱（預設 {DEFAULT_HSR_SHEET}）")
     f.add_argument("--hsr-factor-cell", default=DEFAULT_HSR_FACTOR_CELL,
                    help=f"高鐵表碳排係數所在儲存格（預設 {DEFAULT_HSR_FACTOR_CELL}）")

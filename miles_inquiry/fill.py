@@ -70,7 +70,7 @@ class Options:
     carbon: bool = True            # 碳排量 = 距離*人次*係數 (Excel formulas) on 航空 and 高鐵
     hsr_sheet: str = DEFAULT_HSR_SHEET
     hsr_factor_cell: str = DEFAULT_HSR_FACTOR_CELL
-    hsr_distance: bool = True      # fill 高鐵 距離 from data/thsr_stations.csv + rail_distance_overrides.csv
+    hsr_distance: bool = True      # fill 高鐵 距離 from data/thsr_distances.csv + rail_distance_overrides.csv
     max_header_scan: int = 20
 
     def __post_init__(self):
@@ -136,7 +136,7 @@ class FillSummary:
     hsr_distance_counts: Counter = field(default_factory=Counter)   # thsr / override / kept / missing
     hsr_missing_pairs: Dict[Tuple[str, str], List[int]] = field(default_factory=dict)   # pair → rows
     hsr_unresolved: Counter = field(default_factory=Counter)       # value → occurrences (not a station)
-    hsr_missing_km: Counter = field(default_factory=Counter)       # THSR station without km in thsr_stations.csv
+    hsr_missing_thsr: Counter = field(default_factory=Counter)       # THSR pair missing from thsr_distances.csv
 
     def console_summary(self) -> str:
         lines = [
@@ -151,11 +151,11 @@ class FillSummary:
             lines.append("碳排量欄已有其他內容、保留未改的列：" + "、".join(str(r) for r in self.carbon_kept))
         if self.hsr_distance_counts:
             c = self.hsr_distance_counts
-            lines.append(f"距離（高鐵）：台灣高鐵里程表 {c['thsr']} 列、{RAIL_OVERRIDES_FILENAME} {c['override']} 列、"
+            lines.append(f"距離（高鐵）：台灣高鐵站間距離表 {c['thsr']} 列、{RAIL_OVERRIDES_FILENAME} {c['override']} 列、"
                          f"保留既有 {c['kept']} 列、無法計算 {c['missing']} 列")
-        if self.hsr_missing_km:
-            lines.append("data/thsr_stations.csv 尚缺里程的站（相關列距離留空）：" +
-                         "、".join(f"{k}（{v} 列）" for k, v in self.hsr_missing_km.most_common()))
+        if self.hsr_missing_thsr:
+            lines.append("data/thsr_distances.csv 缺少的站對（相關列距離留空）：" +
+                         "、".join(f"{k}（{v} 列）" for k, v in self.hsr_missing_thsr.most_common()))
         if self.hsr_unresolved:
             lines.append(f"高鐵表無法對應的站名（請加入 data/{RAIL_LOOKUP_FILENAME}）：")
             for raw, n in self.hsr_unresolved.most_common():
@@ -572,14 +572,16 @@ def _fill_hsr_distance(wb, rail: RailData, summary: FillSummary, options: Option
             if res.review and not res.non_station:
                 add_note(f"{role} {res.raw}→{res.canonical}" + (f"：{res.note}" if res.note else "，請確認"))
         if dist.km is not None:
+            if dist.note == "起迄相同":
+                add_note("起迄同站，距離為 0，請確認")
             dist_cell.value = int(dist.km) if float(dist.km).is_integer() else dist.km
             summary.hsr_distance_counts[dist.source] += 1
             continue
 
         summary.hsr_distance_counts["missing"] += 1
-        if dist.source == "missing_km":     # chainage table incomplete → summary only, not 3,000 notes
-            for name in dist.note.split("、"):
-                summary.hsr_missing_km[name] += 1
+        if dist.source == "missing_pair":   # both THSR stations but the pair table lacks them
+            summary.hsr_missing_thsr[dist.note] += 1
+            add_note(f"data/thsr_distances.csv 缺 {dist.note} 距離")
             continue
         unknown = [(role, res) for role, res in (("起站", ra), ("迄站", rb)) if not res.station]
         non_station = [(role, res) for role, res in unknown if res.non_station]

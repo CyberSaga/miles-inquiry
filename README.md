@@ -113,7 +113,12 @@ python -m miles_inquiry fill 碳盤查_2026-05.xlsx
 高鐵表的「距離」依下列順序填入（已有值的格子保留，`--overwrite` 才覆寫；`--no-hsr-distance` 不填）：
 
 1. `data/rail_distance_overrides.csv`（`from,to,km,source`，方向不拘）：不在台灣高鐵線上的站對（例如中國高鐵 蘇州北→徐州東）或要指定距離的站對。
-2. `data/thsr_stations.csv`（`station,km,source`）：台灣高鐵 12 站的沿線里程，兩站距離 = 里程相減。
+2. `data/thsr_distances.csv`（`from,to,kg_co2e,km`）：台灣高鐵 12 站、66 組站對的距離，取自**高鐵官網**
+   [「高速鐵路旅客運輸服務碳足跡」](https://www.thsrc.com.tw/ArticleContent/5a1f4c72-b564-4706-bcdd-efbda93c3d93)
+   的「車站間旅客運輸碳足跡」表（kg CO2e／每人次，依環境部碳標 29 gCO2e／人公里計算），`km = kg_co2e ÷ 0.029` 取 1 位小數。
+   因此高鐵表 `距離 × 人次 × J2(0.029)` 會等於高鐵公司公布的每人次碳足跡。
+   不用維基百科的沿線里程：維基可任意編輯、非官方，而且數字比官方表短約 1.3%（例如台北—左營維基 339.1 km、官方換算 343.4 km）。
+   官方表更新（新碳標）時，整份換掉並同步更新高鐵表 J2。
 3. 都查不到：距離留空並寫備註。若起迄兩站都不是台灣高鐵站（例如中國高鐵），會另外輸出
    `<輸出檔名>_高鐵待補距離.csv`，每組站對一列並附上列號。填好 `km`、`source` 後貼進 `rail_distance_overrides.csv`，再重跑一次。
 
