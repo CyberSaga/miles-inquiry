@@ -171,13 +171,19 @@ def main(initial: Optional[str] = None) -> int:
             import ctypes
             ctypes.windll.shcore.SetProcessDpiAwareness(1)  # sharp text on high-DPI screens
     root = tk.Tk()
+    # Under pythonw there is no console, so startup failures must be shown in a dialog.
     try:
         from . import cli  # noqa: F401 - fail early (and visibly) if openpyxl is missing
+        App(root, initial)
     except ImportError as exc:
         root.withdraw()
         messagebox.showerror("缺少套件", f"{exc}\n\n請先執行：pip install openpyxl geographiclib")
         return 1
-    App(root, initial)
+    except Exception:  # noqa: BLE001
+        import traceback
+        root.withdraw()
+        messagebox.showerror("啟動失敗", traceback.format_exc())
+        return 1
     root.mainloop()
     return 0
 

@@ -31,7 +31,8 @@ pip install -e .          # 或只 pip install openpyxl geographiclib
 ```
 
 Windows 使用者：把 `.xlsx` 直接**拖曳到 `fill.bat`** 上即可（需先安裝 Python 並勾選加入 PATH，再 `pip install openpyxl geographiclib`）。
-`fill.bat` 也可在命令列用 `fill.bat 檔案.xlsx` 執行（相對路徑以目前目錄為準）；檔案為 UTF-8＋CRLF，開頭的 `chcp 65001` 讓中文訊息正常顯示。
+`fill.bat` 也可在命令列用 `fill.bat 檔案.xlsx` 執行（相對路徑以目前目錄為準）；不帶檔案直接雙擊則開啟圖形介面。
+`.bat` 檔一律只用 ASCII＋CRLF：cmd.exe 讀含中文（UTF-8）的批次檔會錯位，把半行字當成指令執行；中文訊息由 Python 輸出，主控台可正常顯示。
 
 ## 圖形介面（GUI）
 
