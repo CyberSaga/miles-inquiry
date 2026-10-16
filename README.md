@@ -240,7 +240,7 @@ python -m miles_inquiry screenshots --routes TPE-JFK,MZG-KHH --out 截圖
 | `TPE-JFK_12566km.png` | 網站顯示的距離＝表內距離（檔名的 km 是從網頁讀到的數字） |
 | `KHH-SAI_網站無此機場.png` | 網站資料庫沒有該代碼，截圖會顯示網站的錯誤訊息（此類距離取自 OurAirports） |
 | `AAA-BBB_網站XXkm_表內YYkm.png` | 不符（理論上不會發生；結束碼 2） |
-| `index.csv` | 路線、網站 km、表內 km、結果、對應的工作表列號、網址、擷取時間 |
+| `index.csv` | 路線、網站 km、表內 km、結果、網址、擷取時間（不含工作表列號，活頁簿改動後索引依然有效） |
 | `index.html` | 同上附縮圖，用瀏覽器開啟即可逐張檢視 |
 
 每張截圖底部有一條黑色列，寫明網址與擷取時間（瀏覽器截圖沒有網址列，故由本工具加註，並標示「此列為 miles_inquiry 加註」）；

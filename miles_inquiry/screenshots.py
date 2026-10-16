@@ -10,7 +10,7 @@ file name and ``index.csv`` say whether the screenshot confirms the number::
         TPE-JFK_12566km.png             site shows 12566 km = value in the sheet
         KHH-SAI_網站無此機場.png          the site's database lacks a code (page shows its error)
         LAX-SEA_網站1535km_表內1536km.png  mismatch (should never happen)
-        index.csv                        route, site km, sheet km, status, sheet rows, file, URL, time
+        index.csv                        route, site km, sheet km, status, file, URL, time
         index.html                       the same as a page with thumbnails (open in a browser)
 
 Requirements are the same as ``verify-online`` (Node.js + the playwright npm package).
@@ -22,7 +22,7 @@ import html
 import json
 import subprocess
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence
 
@@ -34,8 +34,8 @@ from .verify_online import (Route, find_node, local_km, node_env, parse_missing_
 SHOT_JS = Path(__file__).with_name("gcm_screenshot.js")
 DIR_SUFFIX = "_greatcirclemap截圖"
 STATUSES = ("match", "mismatch", "site_missing", "error")
-INDEX_COLUMNS = ("route", "origin", "dest", "site_km", "sheet_km", "status", "screenshot", "rows", "url",
-                 "captured_at", "note")
+INDEX_COLUMNS = ("route", "origin", "dest", "site_km", "sheet_km", "status", "screenshot", "url", "captured_at",
+                 "note")
 
 
 @dataclass
@@ -43,7 +43,6 @@ class RouteJob:
     origin: str
     dest: str
     sheet_km: Optional[int] = None          # value in 距離 (from the fill report), if known
-    rows: List[int] = field(default_factory=list)
 
     @property
     def route(self) -> str:
@@ -91,10 +90,6 @@ def jobs_from_report(path: Path) -> List[RouteJob]:
             job = jobs.setdefault((a, b), RouteJob(a, b, km))
             if job.sheet_km is None:
                 job.sheet_km = km
-            try:
-                job.rows.append(int(row.get("row") or 0))
-            except ValueError:
-                pass
     return list(jobs.values())
 
 
@@ -226,10 +221,6 @@ def take_screenshots(jobs: Sequence[RouteJob], out_dir: Path, db: Optional[Airpo
 # index files
 # ---------------------------------------------------------------------------
 
-def _rows_text(rows: Sequence[int]) -> str:
-    return ";".join(str(r) for r in rows)
-
-
 def write_index_csv(results: Sequence[ShotResult], path: Path) -> Path:
     path = Path(path)
     with path.open("w", encoding="utf-8-sig", newline="") as fh:
@@ -240,7 +231,7 @@ def write_index_csv(results: Sequence[ShotResult], path: Path) -> Path:
             w.writerow({"route": j.route, "origin": j.origin, "dest": j.dest,
                         "site_km": "" if r.site_km is None else r.site_km,
                         "sheet_km": "" if j.sheet_km is None else j.sheet_km,
-                        "status": r.status, "screenshot": r.screenshot, "rows": _rows_text(j.rows),
+                        "status": r.status, "screenshot": r.screenshot,
                         "url": j.url, "captured_at": r.captured_at, "note": r.note})
     return path
 
@@ -261,7 +252,6 @@ def write_index_html(results: Sequence[ShotResult], path: Path) -> Path:
             f'<td class="n">{"" if r.site_km is None else r.site_km}</td>'
             f'<td class="n">{"" if j.sheet_km is None else j.sheet_km}</td>'
             f'<td>{e(_STATUS_LABEL.get(r.status, r.status))}</td>'
-            f'<td>{e(_rows_text(j.rows).replace(";", ", "))}</td>'
             f'<td><a href="{e(j.url)}">開啟網站</a><br><small>{e(r.captured_at)}</small></td>'
             f'<td>{img}<div class="note">{e(r.note)}</div></td></tr>')
     summary = "、".join(f"{_STATUS_LABEL[s]} {n}" for s, n in counts.items())
@@ -282,7 +272,7 @@ tr.site_missing td{{background:#fff6dc}}
 </style></head><body>
 <h1>greatcirclemap.com 距離截圖</h1>
 <p>共 {len(results)} 條路線：{e(summary)}。每張截圖底部的黑色列為本工具加註的網址與擷取時間。</p>
-<table><thead><tr><th>路線</th><th>網站 km</th><th>表內 km</th><th>結果</th><th>工作表列</th><th>網址／時間</th><th>截圖</th></tr></thead>
+<table><thead><tr><th>路線</th><th>網站 km</th><th>表內 km</th><th>結果</th><th>網址／時間</th><th>截圖</th></tr></thead>
 <tbody>
 {chr(10).join(rows)}
 </tbody></table></body></html>

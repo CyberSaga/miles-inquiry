@@ -42,7 +42,7 @@ def write_report(path: Path, rows) -> Path:
     return path
 
 
-def test_jobs_from_report_dedupes_directed_routes_and_keeps_rows(tmp_path: Path):
+def test_jobs_from_report_dedupes_directed_routes(tmp_path: Path):
     rep = write_report(tmp_path / "x_report.csv", [
         [2, "TPE", "JFK", "TPE", "JFK", 12566, "filled", "", ""],
         [3, "無", "無", "", "", "", "skipped", "", ""],
@@ -52,12 +52,12 @@ def test_jobs_from_report_dedupes_directed_routes_and_keeps_rows(tmp_path: Path)
         [7, "LAX", "TAP", "LAX", "", "", "unresolved", "", ""],
     ])
     jobs = jobs_from_report(rep)
-    assert [(j.route, j.sheet_km, j.rows) for j in jobs] == [("TPE-JFK", 12566, [2, 4]), ("JFK-TPE", 12566, [5])]
+    assert [(j.route, j.sheet_km) for j in jobs] == [("TPE-JFK", 12566), ("JFK-TPE", 12566)]
 
 
 def test_take_screenshots_names_files_and_writes_index(tmp_path: Path):
-    jobs = [RouteJob("TPE", "JFK", 12566, [2, 4]), RouteJob("KHH", "SAI", 1986, [172]),
-            RouteJob("LAX", "SEA", 1536, [196]), RouteJob("SEA", "IAH", 3020, [216])]
+    jobs = [RouteJob("TPE", "JFK", 12566), RouteJob("KHH", "SAI", 1986),
+            RouteJob("LAX", "SEA", 1536), RouteJob("SEA", "IAH", 3020)]
     out = tmp_path / "shots"
     res = take_screenshots(jobs, out, shoot=fake_shooter(
         {"TPE-JFK": 12566, "KHH-SAI": None, "LAX-SEA": 1535, "SEA-IAH": "boom"}))
@@ -68,11 +68,11 @@ def test_take_screenshots_names_files_and_writes_index(tmp_path: Path):
     assert not any(n.startswith("_tmp_") for n in names)
     with (out / "index.csv").open(encoding="utf-8-sig") as fh:
         idx = list(csv.DictReader(fh))
-    assert idx[0]["rows"] == "2;4" and idx[0]["site_km"] == "12566" and idx[0]["screenshot"] == "TPE-JFK_12566km.png"
+    assert "rows" not in idx[0] and idx[0]["site_km"] == "12566" and idx[0]["screenshot"] == "TPE-JFK_12566km.png"
     assert idx[0]["url"] == "https://www.greatcirclemap.com/?routes=TPE-JFK"
     assert idx[3]["status"] == "error" and idx[3]["screenshot"] == "" and "Timeout" in idx[3]["note"]
     html = (out / "index.html").read_text(encoding="utf-8")
-    assert 'src="TPE-JFK_12566km.png"' in html and "網站無此機場" in html
+    assert 'src="TPE-JFK_12566km.png"' in html and "網站無此機場" in html and "工作表列" not in html
 
 
 def test_routes_mode_without_sheet_value_still_records_site_km(tmp_path: Path):
