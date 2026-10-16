@@ -14,11 +14,12 @@ from typing import Optional, Sequence
 
 from . import __version__, default_data_dir
 from .airports import GCM_FILENAME, OURAIRPORTS_FILENAME, AirportDB, update_all
-from .fill import (DEFAULT_HSR_FACTOR_CELL, DEFAULT_HSR_SHEET, DEFAULT_SHEET, Options, default_output_path, default_report_path, fill_workbook, next_free_path,
-                   write_report)
+from .fill import (DEFAULT_HSR_FACTOR_CELL, DEFAULT_HSR_SHEET, DEFAULT_SHEET, Options, default_output_path,
+                   default_report_path, fill_workbook, next_free_path, write_rail_todo, write_report)
 from .geo import DEFAULT_METHOD, HAVE_GEOGRAPHICLIB, METHODS
 from .lookup import Lookup
 from .overrides import Overrides
+from .rail import STATIONS_FILENAME, RailData
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -47,6 +48,8 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument("--keep-names", action="store_true",
                    help="起迄站保留原文（預設把 澎湖、HONG KONG 等改為 IATA 代碼，原值寫入備註）")
     f.add_argument("--no-carbon", action="store_true", help="不填碳排量（預設以公式 =距離*人次*係數 填入航空與高鐵表）")
+    f.add_argument("--no-hsr-distance", action="store_true",
+                   help="不填高鐵表距離（預設依 data/thsr_stations.csv、rail_distance_overrides.csv 填入）")
     f.add_argument("--hsr-sheet", default=DEFAULT_HSR_SHEET, help=f"高鐵工作表名稱（預設 {DEFAULT_HSR_SHEET}）")
     f.add_argument("--hsr-factor-cell", default=DEFAULT_HSR_FACTOR_CELL,
                    help=f"高鐵表碳排係數所在儲存格（預設 {DEFAULT_HSR_FACTOR_CELL}）")
@@ -135,8 +138,15 @@ def cmd_fill(args) -> int:
     options = Options(sheet=args.sheet, method=args.method, decimals=args.decimals,
                       overwrite=args.overwrite, fill_hsr_distance=args.fill_hsr_distance,
                       convert_names=not args.keep_names, carbon=not args.no_carbon,
-                      hsr_sheet=args.hsr_sheet, hsr_factor_cell=args.hsr_factor_cell)
-    summary = fill_workbook(args.input, output, lookup, overrides, options)
+                      hsr_sheet=args.hsr_sheet, hsr_factor_cell=args.hsr_factor_cell,
+                      hsr_distance=not args.no_hsr_distance)
+    rail = None
+    if not args.no_hsr_distance:
+        if (data_dir / STATIONS_FILENAME).is_file():
+            rail = RailData.load(data_dir)
+        else:
+            print(f"注意：找不到 {data_dir / STATIONS_FILENAME}，高鐵表距離不填")
+    summary = fill_workbook(args.input, output, lookup, overrides, options, rail)
 
     report_path: Optional[Path] = None
     if not args.no_report:
@@ -145,9 +155,16 @@ def cmd_fill(args) -> int:
             report_path = next_free_path(report_path)
         report_path = write_report(summary, report_path)
 
+    todo_path = None
+    if summary.hsr_missing_pairs:
+        todo_path = next_free_path(output.with_name(f"{output.stem}_高鐵待補距離.csv"))
+        write_rail_todo(summary, todo_path)
+
     print(summary.console_summary())
     if report_path:
         print(f"報表：{report_path}")
+    if todo_path:
+        print(f"高鐵待補距離：{todo_path}（填好 km、source 後貼到 data/rail_distance_overrides.csv 再重跑）")
     print(f"機場資料 {len(airports)} 筆、對應表 {len(lookup.entries)} 筆、距離覆寫 {len(overrides)} 筆")
     if args.method == "geodesic" and not HAVE_GEOGRAPHICLIB:
         print("警告：未安裝 geographiclib，改用內建 Vincenty 公式：一般航線結果相同，"

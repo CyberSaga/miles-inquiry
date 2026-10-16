@@ -53,6 +53,7 @@ python -m miles_inquiry fill 碳盤查_2026-05.xlsx
 | `--fill-hsr-distance` | 疑似高鐵列仍填入飛航距離（預設留空） |
 | `--keep-names` | 起迄站保留原文，不改為 IATA 代碼（預設會改，見下） |
 | `--no-carbon` | 不填碳排量 |
+| `--no-hsr-distance` | 不填高鐵表距離 |
 | `--hsr-sheet NAME` / `--hsr-factor-cell CELL` | 高鐵工作表名稱（預設 `高鐵`）/ 高鐵碳排係數儲存格（預設 `J2`） |
 | `--lookup PATH` / `--airports PATH` / `--fallback-airports PATH` / `--overrides PATH` | 自訂資料檔 |
 | `--data-dir DIR` | 一次指定資料目錄（預設專案 `data/`，亦可用環境變數 `MILES_INQUIRY_DATA`） |
@@ -106,6 +107,19 @@ python -m miles_inquiry fill 碳盤查_2026-05.xlsx
   距離還沒填時顯示空白，填入距離後自動算出。人次為 0 或起迄為「無」的列不寫。
 * 碳排量欄是空白、範本文字 `=距離*人次*係數`、或本工具先前寫的公式時才會寫入；其他手打的值或公式保留不動
   （列在畫面上，`--overwrite` 才覆寫）。
+
+### 高鐵表距離
+
+高鐵表的「距離」依下列順序填入（已有值的格子保留，`--overwrite` 才覆寫；`--no-hsr-distance` 不填）：
+
+1. `data/rail_distance_overrides.csv`（`from,to,km,source`，方向不拘）：不在台灣高鐵線上的站對（例如中國高鐵 蘇州北→徐州東）或要指定距離的站對。
+2. `data/thsr_stations.csv`（`station,km,source`）：台灣高鐵 12 站的沿線里程，兩站距離 = 里程相減。
+3. 都查不到：距離留空並寫備註。若起迄兩站都不是台灣高鐵站（例如中國高鐵），會另外輸出
+   `<輸出檔名>_高鐵待補距離.csv`，每組站對一列並附上列號。填好 `km`、`source` 後貼進 `rail_distance_overrides.csv`，再重跑一次。
+
+站名寫法由 `data/hsr_lookup.csv`（`value,station,review,note`）統一：臺/台、結尾的「站」「車站」會自動忽略；
+`高雄→左營`、`粄橋→板橋`（review，寫入備註）、`苏州北→蘇州北`（簡繁合併）等列在表中。`station` 留空表示確定不是高鐵站
+（斗六、屏東、旗山分行…），備註會說明。J2 是碳排係數，工具絕不會把備註寫進那一格。
 
 ## 資料檔（`data/`）
 

@@ -19,6 +19,9 @@ from .geo import DEFAULT_METHOD, METHODS, distance_km, round_km
 from .hsr import hsr_note, is_hsr_like
 from .lookup import Lookup, Resolution, is_skip_value
 from .overrides import Overrides
+from .rail import LOOKUP_FILENAME as RAIL_LOOKUP_FILENAME
+from .rail import OVERRIDES_FILENAME as RAIL_OVERRIDES_FILENAME
+from .rail import RailData
 
 GCM_URL = "https://www.greatcirclemap.com/?routes={o}-{d}"
 NOTE_SEP = "；"
@@ -42,6 +45,7 @@ HSR_HEADER_ALIASES: Dict[str, Tuple[str, ...]] = {
     "distance": HEADER_ALIASES["distance"],
     "pax": HEADER_ALIASES["pax"],
     "carbon": HEADER_ALIASES["carbon"],
+    "note": HEADER_ALIASES["note"],
 }
 REQUIRED_ROLES = ("origin", "dest", "distance")
 
@@ -66,6 +70,7 @@ class Options:
     carbon: bool = True            # 碳排量 = 距離*人次*係數 (Excel formulas) on 航空 and 高鐵
     hsr_sheet: str = DEFAULT_HSR_SHEET
     hsr_factor_cell: str = DEFAULT_HSR_FACTOR_CELL
+    hsr_distance: bool = True      # fill 高鐵 距離 from data/thsr_stations.csv + rail_distance_overrides.csv
     max_header_scan: int = 20
 
     def __post_init__(self):
@@ -128,6 +133,10 @@ class FillSummary:
     hsr_carbon_rows: int = 0
     hsr_carbon_pending: int = 0                                # 高鐵 rows whose 距離 is still blank
     hsr_factor: Optional[carbon.Factor] = None
+    hsr_distance_counts: Counter = field(default_factory=Counter)   # thsr / override / kept / missing
+    hsr_missing_pairs: Dict[Tuple[str, str], List[int]] = field(default_factory=dict)   # pair → rows
+    hsr_unresolved: Counter = field(default_factory=Counter)       # value → occurrences (not a station)
+    hsr_missing_km: Counter = field(default_factory=Counter)       # THSR station without km in thsr_stations.csv
 
     def console_summary(self) -> str:
         lines = [
@@ -140,6 +149,19 @@ class FillSummary:
             lines.append("碳排量（航空）：" + "、".join(f"{k} {v} 列" for k, v in self.carbon_counts.items()))
         if self.carbon_kept:
             lines.append("碳排量欄已有其他內容、保留未改的列：" + "、".join(str(r) for r in self.carbon_kept))
+        if self.hsr_distance_counts:
+            c = self.hsr_distance_counts
+            lines.append(f"距離（高鐵）：台灣高鐵里程表 {c['thsr']} 列、{RAIL_OVERRIDES_FILENAME} {c['override']} 列、"
+                         f"保留既有 {c['kept']} 列、無法計算 {c['missing']} 列")
+        if self.hsr_missing_km:
+            lines.append("data/thsr_stations.csv 尚缺里程的站（相關列距離留空）：" +
+                         "、".join(f"{k}（{v} 列）" for k, v in self.hsr_missing_km.most_common()))
+        if self.hsr_unresolved:
+            lines.append(f"高鐵表無法對應的站名（請加入 data/{RAIL_LOOKUP_FILENAME}）：")
+            for raw, n in self.hsr_unresolved.most_common():
+                lines.append(f"  {raw}   # 出現 {n} 次")
+        if self.hsr_missing_pairs:
+            lines.append(f"高鐵表缺距離的站對 {len(self.hsr_missing_pairs)} 組（請填 data/{RAIL_OVERRIDES_FILENAME}）")
         if self.hsr_factor is not None:
             line = f"碳排量（高鐵）：{self.hsr_carbon_rows} 列，係數 {self.hsr_factor.value}（{self.hsr_factor.label}）"
             if self.hsr_carbon_pending:
@@ -312,7 +334,8 @@ def load_input_workbook(input_path: Path):
 
 def fill_workbook(input_path: Path, output_path: Path, lookup: Lookup,
                   overrides: Optional[Overrides] = None,
-                  options: Optional[Options] = None) -> FillSummary:
+                  options: Optional[Options] = None,
+                  rail: Optional[RailData] = None) -> FillSummary:
     options = options or Options()
     overrides = overrides or Overrides({})
     input_path, output_path = Path(input_path), Path(output_path)
@@ -457,6 +480,8 @@ def fill_workbook(input_path: Path, output_path: Path, lookup: Lookup,
             result.status = "filled"
         _finish(result, report_notes, summary)
 
+    if options.hsr_distance and rail is not None:
+        _fill_hsr_distance(wb, rail, summary, options)
     if options.carbon:
         _fill_air_carbon(ws, cols, lookup, summary, options)
         _fill_hsr_carbon(wb, summary, options)
@@ -498,15 +523,96 @@ def _fill_air_carbon(ws: Worksheet, cols: Dict[str, int], lookup: Lookup, summar
         summary.carbon_counts[res.category] += 1
 
 
-def _fill_hsr_carbon(wb, summary: FillSummary, options: Options) -> None:
+def _hsr_sheet(wb, summary: FillSummary, options: Options, what: str):
     if options.hsr_sheet not in wb.sheetnames:
-        summary.warnings.append(f"沒有工作表「{options.hsr_sheet}」，未填高鐵碳排量")
-        return
+        summary.warnings.append(f"沒有工作表「{options.hsr_sheet}」，未填高鐵{what}")
+        return None, 0, {}
     ws = wb[options.hsr_sheet]
     try:
         header_row, cols = find_header(ws, options.max_header_scan, HSR_HEADER_ALIASES)
     except ValueError as exc:
-        summary.warnings.append(f"{exc}，未填高鐵碳排量")
+        summary.warnings.append(f"{exc}，未填高鐵{what}")
+        return None, 0, {}
+    return ws, header_row, cols
+
+
+def _fill_hsr_distance(wb, rail: RailData, summary: FillSummary, options: Options) -> None:
+    ws, header_row, cols = _hsr_sheet(wb, summary, options, "距離")
+    if ws is None:
+        return
+    factor_coord = options.hsr_factor_cell.replace("$", "").upper()
+    for r in range(header_row + 1, ws.max_row + 1):
+        o, d = ws.cell(r, cols["origin"]).value, ws.cell(r, cols["dest"]).value
+        pax = _pax_value(ws.cell(r, cols["pax"]).value) if "pax" in cols else None
+        if _is_blank(o) and _is_blank(d):
+            continue
+        if is_skip_value(o) or is_skip_value(d) or (pax is not None and pax == 0):
+            continue
+        note_cell = ws.cell(r, cols["note"]) if "note" in cols else None
+        if note_cell is not None and note_cell.coordinate == factor_coord:
+            note_cell = None    # J2 holds the 碳排係數 – never write text into it
+
+        def add_note(text: str):
+            if note_cell is not None:
+                note_cell.value = append_note(note_cell.value, text)
+
+        blanks = [role for role, v in (("起站", o), ("迄站", d)) if _is_blank(v)]
+        if blanks:
+            for role in blanks:
+                add_note(f"{role}空白，請補填")
+            summary.hsr_distance_counts["missing"] += 1
+            continue
+        dist_cell = ws.cell(r, cols["distance"])
+        if not _is_blank(dist_cell.value) and not options.overwrite:
+            summary.hsr_distance_counts["kept"] += 1
+            continue
+
+        dist, ra, rb = rail.distance(o, d)
+        for role, res in (("起站", ra), ("迄站", rb)):
+            if res.review and not res.non_station:
+                add_note(f"{role} {res.raw}→{res.canonical}" + (f"：{res.note}" if res.note else "，請確認"))
+        if dist.km is not None:
+            dist_cell.value = int(dist.km) if float(dist.km).is_integer() else dist.km
+            summary.hsr_distance_counts[dist.source] += 1
+            continue
+
+        summary.hsr_distance_counts["missing"] += 1
+        if dist.source == "missing_km":     # chainage table incomplete → summary only, not 3,000 notes
+            for name in dist.note.split("、"):
+                summary.hsr_missing_km[name] += 1
+            continue
+        unknown = [(role, res) for role, res in (("起站", ra), ("迄站", rb)) if not res.station]
+        non_station = [(role, res) for role, res in unknown if res.non_station]
+        if non_station:
+            for role, res in non_station:
+                add_note(f"{role}「{res.raw}」非高鐵站" + (f"（{res.note}）" if res.note else "") + "，請確認")
+            continue
+        if len(unknown) == 2:               # neither end is a THSR station → e.g. China HSR
+            pair = tuple(sorted((ra.canonical, rb.canonical)))
+            summary.hsr_missing_pairs.setdefault(pair, []).append(r)
+            add_note(f"非台灣高鐵路段（{ra.raw}→{rb.raw}），請在 data/{RAIL_OVERRIDES_FILENAME} 填距離")
+            continue
+        for role, res in unknown:
+            summary.hsr_unresolved[res.raw] += 1
+            add_note(f"無法對應高鐵站：{res.raw}，請更新 data/{RAIL_LOOKUP_FILENAME}")
+
+
+def write_rail_todo(summary: FillSummary, path: Path) -> Optional[Path]:
+    """Template of the station pairs that still need a distance (``from,to,km,source,rows``)."""
+    if not summary.hsr_missing_pairs:
+        return None
+    path = Path(path)
+    with path.open("w", encoding="utf-8-sig", newline="") as fh:
+        w = csv.writer(fh, lineterminator="\n")
+        w.writerow(["from", "to", "km", "source", "rows"])
+        for (a, b), rows in sorted(summary.hsr_missing_pairs.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+            w.writerow([a, b, "", "", " ".join(str(r) for r in rows)])
+    return path
+
+
+def _fill_hsr_carbon(wb, summary: FillSummary, options: Options) -> None:
+    ws, header_row, cols = _hsr_sheet(wb, summary, options, "碳排量")
+    if ws is None:
         return
     if "carbon" not in cols or "pax" not in cols:
         summary.warnings.append(f"「{ws.title}」找不到「碳排量」或「人次」欄，未填碳排量")
