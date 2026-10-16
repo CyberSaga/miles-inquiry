@@ -2,6 +2,7 @@
 
 把碳盤查活頁簿「航空」工作表中的 **航班(起站) / 航班(迄站)** 轉成 IATA 機場代碼、
 計算大圓距離（公里）填入 **距離** 欄（起迄站若是地名，例如 HONG KONG、西雅圖、洛杉磯，會直接改成代碼，原值寫在備註），並把看起來像 **高鐵** 的列（例如 新竹↔台北、台中↔台北）標註在備註，請人工確認。
+同時在「航空」與「高鐵」兩表的 **碳排量** 欄填入公式 `=距離*人次*係數`（見[碳排量](#碳排量)）。
 
 **計算結果與 <https://www.greatcirclemap.com/> 顯示的數字完全相同**：
 
@@ -51,12 +52,14 @@ python -m miles_inquiry fill 碳盤查_2026-05.xlsx
 | `--overwrite-output` | 輸出檔／報表已存在時直接覆寫（預設改存為 `檔名(2).xlsx`） |
 | `--fill-hsr-distance` | 疑似高鐵列仍填入飛航距離（預設留空） |
 | `--keep-names` | 起迄站保留原文，不改為 IATA 代碼（預設會改，見下） |
+| `--no-carbon` | 不填碳排量 |
+| `--hsr-sheet NAME` / `--hsr-factor-cell CELL` | 高鐵工作表名稱（預設 `高鐵`）/ 高鐵碳排係數儲存格（預設 `J2`） |
 | `--lookup PATH` / `--airports PATH` / `--fallback-airports PATH` / `--overrides PATH` | 自訂資料檔 |
 | `--data-dir DIR` | 一次指定資料目錄（預設專案 `data/`，亦可用環境變數 `MILES_INQUIRY_DATA`） |
 | `--report PATH` / `--no-report` | 報表路徑 / 不產生報表 |
 
 欄位是用**標題文字**找的（航班(起站)、航班(迄站)、距離、人次、備註；容忍空白與全半形），
-不是固定欄位字母。其他欄、其他工作表、公式、格式與欄寬一律保留不動。
+不是固定欄位字母。除了起迄站、距離、碳排量與備註，其他欄、其他工作表、公式、格式與欄寬一律保留不動。
 
 ### 每列的處理規則
 
@@ -85,6 +88,24 @@ python -m miles_inquiry fill 碳盤查_2026-05.xlsx
 原值寫進備註：`迄站原值「HONG KONG」→HKG`（誤植修正與 `review=yes` 的備註本身已含「原值→代碼」，不再重複）。
 已經是代碼的值（含大小寫不同如 `kHH`）、無法對應的值、疑似高鐵列（火車行程，且新竹沒有機場）都保留原文。
 重跑輸出檔時代碼直接通過，不會再加備註。加 `--keep-names` 可保留原文（此時一般對應只寫在報表）。
+
+### 碳排量
+
+碳排量欄寫入 Excel **公式**（不是數值），係數改了 Excel 會自動重算；報表 CSV 另附 `category`、`factor`、`carbon`（工具算出的值）方便核對。
+
+* **航空**：係數依類別取自類別文字右邊那格（實際活頁簿為 K3:L5）：
+
+  | 類別（K 欄文字含） | 係數 | 判定 | 公式範例 |
+  |---|---|---|---|
+  | 國際線 | `$L$3` | 其他（含兩岸、港澳、海外分行在當地的航段） | `=G9*H9*$L$3` |
+  | 國內線 | `$L$4` | 起迄機場都在台灣 | `=G4*H4*$L$4` |
+  | 中國分行 | `$L$5` | 起迄機場都在中國大陸 | `=G7*H7*$L$5` |
+
+  只填有距離的列（`filled`、`kept`）；排除、無法對應、疑似高鐵的列留空。表格搬位置也找得到（依文字找，不靠固定位址）。
+* **高鐵**：係數固定為 `J2`（`--hsr-factor-cell` 可改），公式為 `=IF(G2="","",G2*H2*$J$2)`：
+  距離還沒填時顯示空白，填入距離後自動算出。人次為 0 或起迄為「無」的列不寫。
+* 碳排量欄是空白、範本文字 `=距離*人次*係數`、或本工具先前寫的公式時才會寫入；其他手打的值或公式保留不動
+  （列在畫面上，`--overwrite` 才覆寫）。
 
 ## 資料檔（`data/`）
 
@@ -256,6 +277,10 @@ noted in 備註 (`迄站原值「HONG KONG」→HKG`); codes, unresolved values 
 real trip is flagged (`起站空白，請補填`) rather than skipped; only 無/0/-/N/A or 人次=0 skip a row. Rows whose both endpoints lie on
 Taiwan's HSR corridor are flagged as probable HSR trips (`疑似高鐵(...)`, distance left blank
 unless `--fill-hsr-distance`).
+It also writes 碳排量 (carbon) as live Excel formulas `=距離*人次*係數`: on 航空 the factor is
+picked by category from the label/number pairs in K3:L5 (both airports in Taiwan → 國內線,
+both in mainland China → 中國分行, otherwise 國際線); on 高鐵 the factor is `J2` and the formula
+is `=IF(G2="","",G2*H2*$J$2)` so it stays blank until a distance is entered (`--no-carbon` disables this).
 
 ```bash
 pip install -e .

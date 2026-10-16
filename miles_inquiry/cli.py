@@ -14,7 +14,7 @@ from typing import Optional, Sequence
 
 from . import __version__, default_data_dir
 from .airports import GCM_FILENAME, OURAIRPORTS_FILENAME, AirportDB, update_all
-from .fill import (DEFAULT_SHEET, Options, default_output_path, default_report_path, fill_workbook, next_free_path,
+from .fill import (DEFAULT_HSR_FACTOR_CELL, DEFAULT_HSR_SHEET, DEFAULT_SHEET, Options, default_output_path, default_report_path, fill_workbook, next_free_path,
                    write_report)
 from .geo import DEFAULT_METHOD, HAVE_GEOGRAPHICLIB, METHODS
 from .lookup import Lookup
@@ -46,6 +46,10 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument("--fill-hsr-distance", action="store_true", help="疑似高鐵列仍填入飛航距離（預設留空）")
     f.add_argument("--keep-names", action="store_true",
                    help="起迄站保留原文（預設把 澎湖、HONG KONG 等改為 IATA 代碼，原值寫入備註）")
+    f.add_argument("--no-carbon", action="store_true", help="不填碳排量（預設以公式 =距離*人次*係數 填入航空與高鐵表）")
+    f.add_argument("--hsr-sheet", default=DEFAULT_HSR_SHEET, help=f"高鐵工作表名稱（預設 {DEFAULT_HSR_SHEET}）")
+    f.add_argument("--hsr-factor-cell", default=DEFAULT_HSR_FACTOR_CELL,
+                   help=f"高鐵表碳排係數所在儲存格（預設 {DEFAULT_HSR_FACTOR_CELL}）")
     f.add_argument("--lookup", type=Path, default=None, help="自訂 lookup.csv 路徑")
     _add_airport_args(f)
     f.add_argument("--overrides", type=Path, default=None, help="自訂 distance_overrides.csv 路徑")
@@ -130,7 +134,8 @@ def cmd_fill(args) -> int:
         output = new_output
     options = Options(sheet=args.sheet, method=args.method, decimals=args.decimals,
                       overwrite=args.overwrite, fill_hsr_distance=args.fill_hsr_distance,
-                      convert_names=not args.keep_names)
+                      convert_names=not args.keep_names, carbon=not args.no_carbon,
+                      hsr_sheet=args.hsr_sheet, hsr_factor_cell=args.hsr_factor_cell)
     summary = fill_workbook(args.input, output, lookup, overrides, options)
 
     report_path: Optional[Path] = None

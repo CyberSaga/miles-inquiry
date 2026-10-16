@@ -14,14 +14,17 @@ import openpyxl
 from openpyxl.utils.exceptions import InvalidFileException
 from openpyxl.worksheet.worksheet import Worksheet
 
+from . import carbon
 from .geo import DEFAULT_METHOD, METHODS, distance_km, round_km
 from .hsr import hsr_note, is_hsr_like
-from .lookup import Lookup, Resolution
+from .lookup import Lookup, Resolution, is_skip_value
 from .overrides import Overrides
 
 GCM_URL = "https://www.greatcirclemap.com/?routes={o}-{d}"
 NOTE_SEP = "；"
 DEFAULT_SHEET = "航空"
+DEFAULT_HSR_SHEET = "高鐵"
+DEFAULT_HSR_FACTOR_CELL = "J2"
 SUPPORTED_SUFFIXES = (".xlsx", ".xlsm")
 
 # header text (normalised: NFKC, whitespace removed) → role
@@ -31,6 +34,14 @@ HEADER_ALIASES: Dict[str, Tuple[str, ...]] = {
     "distance": ("距離", "距離(km)", "距離km"),
     "pax": ("人次",),
     "note": ("備註",),
+    "carbon": ("碳排量", "碳排放量"),
+}
+HSR_HEADER_ALIASES: Dict[str, Tuple[str, ...]] = {
+    "origin": ("高鐵(起站)", "起站"),
+    "dest": ("高鐵(迄站)", "迄站"),
+    "distance": HEADER_ALIASES["distance"],
+    "pax": HEADER_ALIASES["pax"],
+    "carbon": HEADER_ALIASES["carbon"],
 }
 REQUIRED_ROLES = ("origin", "dest", "distance")
 
@@ -52,6 +63,9 @@ class Options:
     overwrite: bool = False
     fill_hsr_distance: bool = False
     convert_names: bool = True     # replace 澎湖 / HONG KONG / TAS … in the station cells by the IATA code
+    carbon: bool = True            # 碳排量 = 距離*人次*係數 (Excel formulas) on 航空 and 高鐵
+    hsr_sheet: str = DEFAULT_HSR_SHEET
+    hsr_factor_cell: str = DEFAULT_HSR_FACTOR_CELL
     max_header_scan: int = 20
 
     def __post_init__(self):
@@ -71,6 +85,9 @@ class RowResult:
     url: str = ""
     note: str = ""          # everything worth telling (report)
     cell_notes: List[str] = field(default_factory=list)   # what went into 備註
+    category: str = ""      # 國際線 / 國內線 / 中國分行 (碳排係數類別)
+    factor: Optional[float] = None
+    carbon: Optional[float] = None   # 距離*人次*係數, as Excel will compute it
 
     def as_report_row(self) -> dict:
         return {
@@ -83,10 +100,14 @@ class RowResult:
             "status": self.status,
             "url": self.url,
             "note": self.note,
+            "category": self.category,
+            "factor": "" if self.factor is None else self.factor,
+            "carbon": "" if self.carbon is None else self.carbon,
         }
 
 
-REPORT_COLUMNS = ("row", "origin_raw", "dest_raw", "origin_iata", "dest_iata", "km", "status", "url", "note")
+REPORT_COLUMNS = ("row", "origin_raw", "dest_raw", "origin_iata", "dest_iata", "km", "status", "url", "note",
+                  "category", "factor", "carbon")
 
 
 @dataclass
@@ -102,6 +123,11 @@ class FillSummary:
     unresolved_known: Counter = field(default_factory=Counter)   # raw value → occurrences (lookup.csv row with empty iata)
     blank_rows: List[int] = field(default_factory=list)          # rows with an empty 起站/迄站 next to a real trip
     warnings: List[str] = field(default_factory=list)
+    carbon_counts: Counter = field(default_factory=Counter)   # 航空 category label → rows with a 碳排量 formula
+    carbon_kept: List[int] = field(default_factory=list)       # rows whose 碳排量 already held other content
+    hsr_carbon_rows: int = 0
+    hsr_carbon_pending: int = 0                                # 高鐵 rows whose 距離 is still blank
+    hsr_factor: Optional[carbon.Factor] = None
 
     def console_summary(self) -> str:
         lines = [
@@ -110,6 +136,15 @@ class FillSummary:
             f"工作表「{self.sheet}」標題列 {self.header_row}，共處理 {len(self.results)} 列",
             "  " + "、".join(f"{s}={self.counts.get(s, 0)}" for s in STATUSES),
         ]
+        if self.carbon_counts:
+            lines.append("碳排量（航空）：" + "、".join(f"{k} {v} 列" for k, v in self.carbon_counts.items()))
+        if self.carbon_kept:
+            lines.append("碳排量欄已有其他內容、保留未改的列：" + "、".join(str(r) for r in self.carbon_kept))
+        if self.hsr_factor is not None:
+            line = f"碳排量（高鐵）：{self.hsr_carbon_rows} 列，係數 {self.hsr_factor.value}（{self.hsr_factor.label}）"
+            if self.hsr_carbon_pending:
+                line += f"；其中 {self.hsr_carbon_pending} 列距離空白，填入距離後公式自動計算"
+            lines.append(line)
         for w in self.warnings:
             lines.append(f"警告：{w}")
         if self.unresolved:
@@ -129,10 +164,11 @@ class FillSummary:
 # helpers
 # ---------------------------------------------------------------------------
 
-def find_header(ws: Worksheet, max_scan: int = 20) -> Tuple[int, Dict[str, int]]:
+def find_header(ws: Worksheet, max_scan: int = 20,
+                aliases_by_role: Optional[Dict[str, Tuple[str, ...]]] = None) -> Tuple[int, Dict[str, int]]:
     """Return (header_row_index, {role: column_index}) – 1-based."""
     alias_to_role = {}
-    for role, aliases in HEADER_ALIASES.items():
+    for role, aliases in (aliases_by_role or HEADER_ALIASES).items():
         for a in aliases:
             alias_to_role[_norm_header(a)] = role
     for r in range(1, min(ws.max_row, max_scan) + 1):
@@ -144,7 +180,7 @@ def find_header(ws: Worksheet, max_scan: int = 20) -> Tuple[int, Dict[str, int]]
         if all(role in found for role in REQUIRED_ROLES):
             return r, found
     raise ValueError(
-        f"在工作表「{ws.title}」前 {max_scan} 列找不到標題（需含 航班(起站)、航班(迄站)、距離）"
+        f"在工作表「{ws.title}」前 {max_scan} 列找不到標題（需含 起站、迄站、距離）"
     )
 
 
@@ -421,8 +457,77 @@ def fill_workbook(input_path: Path, output_path: Path, lookup: Lookup,
             result.status = "filled"
         _finish(result, report_notes, summary)
 
+    if options.carbon:
+        _fill_air_carbon(ws, cols, lookup, summary, options)
+        _fill_hsr_carbon(wb, summary, options)
+        if summary.carbon_counts or summary.hsr_carbon_rows:
+            wb.calculation.fullCalcOnLoad = True   # no cached values from openpyxl → Excel computes on open
     wb.save(output_path)
     return summary
+
+
+def _fill_air_carbon(ws: Worksheet, cols: Dict[str, int], lookup: Lookup, summary: FillSummary,
+                     options: Options) -> None:
+    if "carbon" not in cols or "pax" not in cols:
+        summary.warnings.append(f"「{ws.title}」找不到「碳排量」或「人次」欄，未填碳排量")
+        return
+    factors = carbon.find_air_factors(ws)
+    missing = [carbon.CATEGORY_LABELS[c] for c in carbon.CATEGORY_LABELS if c not in factors]
+    if missing:
+        summary.warnings.append(f"「{ws.title}」找不到 {'、'.join(missing)} 的碳排係數（類別文字右側需為數字），"
+                                "這些列的碳排量留空")
+    for res in summary.results:
+        if res.status not in ("filled", "kept") or not isinstance(res.km, (int, float)) or isinstance(res.km, bool):
+            continue
+        a, b = lookup.airports.get(res.origin_iata), lookup.airports.get(res.dest_iata)
+        if a is None or b is None:
+            continue
+        cat = carbon.classify(a.iso_country, b.iso_country)
+        res.category = carbon.CATEGORY_LABELS[cat]
+        factor = factors.get(cat)
+        if factor is None:
+            continue
+        cell = ws.cell(res.row, cols["carbon"])
+        if not carbon.writable(cell.value, options.overwrite):
+            summary.carbon_kept.append(res.row)
+            continue
+        pax = _pax_value(ws.cell(res.row, cols["pax"]).value)
+        cell.value = carbon.formula(res.row, cols["distance"], cols["pax"], factor)
+        res.factor = factor.value
+        res.carbon = None if pax is None else round(res.km * pax * factor.value, 6)
+        summary.carbon_counts[res.category] += 1
+
+
+def _fill_hsr_carbon(wb, summary: FillSummary, options: Options) -> None:
+    if options.hsr_sheet not in wb.sheetnames:
+        summary.warnings.append(f"沒有工作表「{options.hsr_sheet}」，未填高鐵碳排量")
+        return
+    ws = wb[options.hsr_sheet]
+    try:
+        header_row, cols = find_header(ws, options.max_header_scan, HSR_HEADER_ALIASES)
+    except ValueError as exc:
+        summary.warnings.append(f"{exc}，未填高鐵碳排量")
+        return
+    if "carbon" not in cols or "pax" not in cols:
+        summary.warnings.append(f"「{ws.title}」找不到「碳排量」或「人次」欄，未填碳排量")
+        return
+    factor = carbon.read_factor(ws, options.hsr_factor_cell)
+    if factor is None:
+        summary.warnings.append(f"「{ws.title}」{options.hsr_factor_cell} 不是數字，無法作為高鐵碳排係數，未填碳排量")
+        return
+    summary.hsr_factor = factor
+    for r in range(header_row + 1, ws.max_row + 1):
+        o, d = ws.cell(r, cols["origin"]).value, ws.cell(r, cols["dest"]).value
+        pax = _pax_value(ws.cell(r, cols["pax"]).value)
+        if not pax or is_skip_value(o) or is_skip_value(d) or _is_blank(o) or _is_blank(d):
+            continue   # empty, excluded (人次 0 / 無) or incomplete rows stay blank
+        cell = ws.cell(r, cols["carbon"])
+        if not carbon.writable(cell.value, options.overwrite):
+            continue
+        cell.value = carbon.formula(r, cols["distance"], cols["pax"], factor, blank_guard=True)
+        summary.hsr_carbon_rows += 1
+        if _is_blank(ws.cell(r, cols["distance"]).value):
+            summary.hsr_carbon_pending += 1
 
 
 def _finish(result: RowResult, report_notes: List[str], summary: FillSummary) -> None:
