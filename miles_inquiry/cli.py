@@ -153,6 +153,7 @@ def cmd_fill(args) -> int:
         else:
             print(f"注意：找不到 {data_dir / STATIONS_FILENAME}，高鐵表距離不填")
     summary = fill_workbook(args.input, output, lookup, overrides, options, rail)
+    args.written_output = output  # read by the GUI to open the result
 
     report_path: Optional[Path] = None
     if not args.no_report:
@@ -225,8 +226,11 @@ def cmd_gui(args) -> int:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
+    return run(build_parser().parse_args(argv))
+
+
+def run(args: argparse.Namespace) -> int:
+    """Run a parsed command, turning expected errors into a message and exit code 1."""
     try:
         return args.func(args)
     except (FileNotFoundError, ValueError, RuntimeError) as exc:

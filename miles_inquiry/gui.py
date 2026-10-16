@@ -45,7 +45,8 @@ class _QueueWriter:
         pass
 
 
-def open_folder(path: Path) -> None:
+def open_path(path: Path) -> None:
+    """Open a file or folder with the system default app."""
     if sys.platform.startswith("win"):
         os.startfile(str(path))  # type: ignore[attr-defined]
     elif sys.platform == "darwin":
@@ -79,6 +80,10 @@ class App:
             var = tk.BooleanVar(value=default)
             ttk.Checkbutton(box, text=label, variable=var).grid(row=i // 2, column=i % 2, sticky="w", padx=(0, 16))
             self.flags[flag] = var
+        self.open_after = tk.BooleanVar(value=True)
+        row = (len(OPTIONS) + 1) // 2
+        ttk.Checkbutton(box, text="完成後自動開啟輸出的 xlsx", variable=self.open_after).grid(
+            row=row, column=0, columnspan=2, sticky="w")
 
         btns = ttk.Frame(frm)
         btns.grid(row=2, column=0, columnspan=3, sticky="w", pady=(0, 6))
@@ -114,7 +119,7 @@ class App:
         raw = self.path_var.get().strip().strip('"')
         folder = Path(raw).parent if raw else Path.cwd()
         if folder.is_dir():
-            open_folder(folder)
+            open_path(folder)
 
     def run(self) -> None:
         path = self._input()
@@ -124,20 +129,27 @@ class App:
         self._clear()
         self._append(f"處理 {path.name} …\n\n")
         self.run_btn.configure(state="disabled")
-        self.worker = threading.Thread(target=self._work, args=(argv,), daemon=True)
+        self.worker = threading.Thread(target=self._work, args=(argv, self.open_after.get()), daemon=True)
         self.worker.start()
 
-    def _work(self, argv: Sequence[str]) -> None:
-        from .cli import main
+    def _work(self, argv: Sequence[str], open_after: bool) -> None:
+        from .cli import build_parser, run
 
         writer = _QueueWriter(self.q)
+        args = build_parser().parse_args(argv)
         try:
             with contextlib.redirect_stdout(writer), contextlib.redirect_stderr(writer):
-                code = main(argv)
+                code = run(args)
         except Exception as exc:  # noqa: BLE001 - surface anything unexpected in the log
             writer.write(f"錯誤：{exc!r}\n")
             code = 1
         self.q.put("\n完成。\n" if code == 0 else "\n執行失敗，請檢查上方訊息。\n")
+        output = getattr(args, "written_output", None)
+        if code == 0 and open_after and output is not None:
+            try:
+                open_path(output)
+            except OSError as exc:
+                self.q.put(f"無法自動開啟 {output}：{exc}\n")
         self.q.put(None)
 
     # -- log -----------------------------------------------------------------
