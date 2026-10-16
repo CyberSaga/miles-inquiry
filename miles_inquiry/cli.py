@@ -91,7 +91,9 @@ def build_parser() -> argparse.ArgumentParser:
     src.add_argument("--report", type=Path, help="fill 產生的報表 CSV：為其中每條有距離的路線截圖，並與表內距離比對")
     src.add_argument("--routes", help="以逗號分隔的路線，如 TPE-JFK,MZG-KHH")
     s.add_argument("--out", type=Path, default=None,
-                   help="截圖資料夾（預設：報表旁的「<檔名>_greatcirclemap截圖」；已存在且非空時自動加 (2)、(3)…）")
+                   help="截圖資料夾（預設：報表旁的「<檔名>_greatcirclemap截圖」）。資料夾已有 index.csv 時為增量模式："
+                        "已截過的路線直接沿用、只補新路線；已有其他內容但沒有 index.csv 時自動加 (2)、(3)…")
+    s.add_argument("--fresh", action="store_true", help="不沿用既有截圖：資料夾已存在時改存到新的 (2)、(3)… 資料夾並全部重截")
     s.add_argument("--method", choices=METHODS, default=DEFAULT_METHOD, help="--routes 模式下比對用的本機演算法")
     s.add_argument("--width", type=int, default=1280, help="截圖寬度（像素，預設 1280）")
     s.add_argument("--height", type=int, default=800, help="截圖高度（像素，預設 800）")
@@ -203,10 +205,13 @@ def cmd_screenshots(args) -> int:
     if not jobs:
         print("沒有可截圖的路線（報表中沒有已填距離的列）")
         return 0
-    out_dir = free_dir(args.out or default_out_dir(args.report))
-    print(f"擷取 {len(jobs)} 條路線的 greatcirclemap.com 截圖（每條約 3–5 秒）…")
+    target = Path(args.out or default_out_dir(args.report))
+    incremental = not args.fresh and (target / "index.csv").is_file()
+    out_dir = target if incremental else free_dir(target)
+    print(("增量模式：只截尚未截過的路線" if incremental else "擷取") +
+          f"（報表共 {len(jobs)} 條路線，greatcirclemap.com 每條約 3–5 秒）…")
     results = take_screenshots(jobs, out_dir, db=_load_airports(args), method=args.method,
-                               width=args.width, height=args.height)
+                               width=args.width, height=args.height, reuse=incremental)
     print(summarize(results, out_dir))
     print(f"索引：{out_dir / 'index.csv'}、{out_dir / 'index.html'}")
     return 2 if any(r.status in ("mismatch", "error") for r in results) else 0

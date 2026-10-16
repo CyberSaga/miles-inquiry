@@ -100,3 +100,70 @@ def test_cli_screenshots_offline(tmp_path: Path, monkeypatch, capsys):
     assert rc == 0
     assert (tmp_path / "x_greatcirclemap截圖" / "TPE-JFK_12566km.png").is_file()
     assert "match=1" in capsys.readouterr().out
+
+
+def counting(site: dict):
+    inner, seen = fake_shooter(site), []
+
+    def shoot(specs):
+        seen.extend(s["url"].rsplit("=", 1)[1] for s in specs)
+        return inner(specs)
+    shoot.seen = seen
+    return shoot
+
+
+def test_incremental_reuses_existing_routes(tmp_path: Path):
+    out = tmp_path / "shots"
+    site = {"TPE-JFK": 12566, "KHH-SAI": None, "LAX-SEA": 1535, "SEA-IAH": 3020, "MZG-KHH": 132}
+    first = counting(site)
+    take_screenshots([RouteJob("TPE", "JFK", 12566), RouteJob("KHH", "SAI", 1986), RouteJob("LAX", "SEA", 1536)],
+                     out, shoot=first, reuse=True)
+    assert first.seen == ["TPE-JFK", "KHH-SAI", "LAX-SEA"]
+    (out / "TPE-JFK_12566km.png").write_bytes(b"original evidence")
+
+    second = counting(site)
+    res = take_screenshots([RouteJob("TPE", "JFK", 12566), RouteJob("KHH", "SAI", 1986),
+                            RouteJob("LAX", "SEA", 1536), RouteJob("SEA", "IAH", 3020)],
+                           out, shoot=second, reuse=True)
+    # kept: match + site_missing; retried: the earlier mismatch; new: SEA-IAH
+    assert sorted(second.seen) == ["LAX-SEA", "SEA-IAH"]
+    assert (out / "TPE-JFK_12566km.png").read_bytes() == b"original evidence"
+    assert [(r.job.route, r.reused) for r in res] == [("TPE-JFK", True), ("KHH-SAI", True),
+                                                       ("LAX-SEA", False), ("SEA-IAH", False)]
+    idx = list(csv.DictReader((out / "index.csv").open(encoding="utf-8-sig")))
+    assert [r["route"] for r in idx] == ["TPE-JFK", "KHH-SAI", "LAX-SEA", "SEA-IAH"]
+    assert idx[0]["captured_at"] == "2026-10-12 21:00:00 UTC+08:00"
+    assert not any(p.name.startswith("_tmp_") for p in out.iterdir())
+
+
+def test_incremental_reshoots_when_sheet_value_differs_and_keeps_dropped_routes(tmp_path: Path):
+    out = tmp_path / "shots"
+    take_screenshots([RouteJob("TPE", "JFK", 12566), RouteJob("MZG", "KHH", 132)], out,
+                     shoot=fake_shooter({"TPE-JFK": 12566, "MZG-KHH": 132}), reuse=True)
+    again = counting({"TPE-JFK": 12570})
+    res = take_screenshots([RouteJob("TPE", "JFK", 12570)], out, shoot=again, reuse=True)
+    assert again.seen == ["TPE-JFK"]                       # the old shot no longer proves 12570
+    names = sorted(p.name for p in out.iterdir())
+    assert "TPE-JFK_12566km.png" not in names and "TPE-JFK_網站12570km_表內12570km.png" not in names
+    assert "TPE-JFK_12570km.png" in names and "MZG-KHH_132km.png" in names   # dropped route's file stays
+    assert [(r.job.route, r.reused) for r in res] == [("TPE-JFK", False), ("MZG-KHH", True)]
+
+
+def test_cli_incremental_and_fresh(tmp_path: Path, monkeypatch, capsys):
+    import miles_inquiry.screenshots as shots
+    shooter = counting({"TPE-JFK": 12566, "MZG-KHH": 132})
+    monkeypatch.setattr(shots, "run_screenshot_js", shooter)
+    rep = write_report(tmp_path / "x_report.csv", [[2, "TPE", "JFK", "TPE", "JFK", 12566, "filled", "", ""]])
+    assert cli.main(["screenshots", "--report", str(rep)]) == 0
+    capsys.readouterr()
+    rep = write_report(tmp_path / "x_report.csv", [[2, "TPE", "JFK", "TPE", "JFK", 12566, "filled", "", ""],
+                                                   [9, "MZG", "KHH", "MZG", "KHH", 132, "filled", "", ""]])
+    assert cli.main(["screenshots", "--report", str(rep)]) == 0
+    text = capsys.readouterr().out
+    assert shooter.seen == ["TPE-JFK", "MZG-KHH"]           # TPE-JFK only once overall
+    assert "沿用既有截圖 1 條，本次新截 1 條" in text
+    d = tmp_path / "x_greatcirclemap截圖"
+    assert (d / "TPE-JFK_12566km.png").is_file() and (d / "MZG-KHH_132km.png").is_file()
+    assert not (tmp_path / "x_greatcirclemap截圖(2)").exists()
+    assert cli.main(["screenshots", "--report", str(rep), "--fresh"]) == 0
+    assert (tmp_path / "x_greatcirclemap截圖(2)" / "MZG-KHH_132km.png").is_file()

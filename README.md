@@ -229,9 +229,15 @@ python -m miles_inquiry verify-online --routes TPE-JFK,MZG-KHH
 
 ```bash
 python -m miles_inquiry screenshots --report 碳盤查_2026-05_距離_report.csv
-#  → 碳盤查_2026-05_距離_greatcirclemap截圖/  （已存在且非空時自動改用 …(2)）
+#  → 碳盤查_2026-05_距離_greatcirclemap截圖/
 python -m miles_inquiry screenshots --routes TPE-JFK,MZG-KHH --out 截圖
 ```
+
+**增量模式**：目標資料夾已有 `index.csv` 時，只截還沒截過的路線，已截過的直接沿用（站間距離不會變，活頁簿改動、
+新增列後重跑只會補新路線，index 也不含列號）。沿用的截圖原封不動（檔案、擷取時間都保留）；只有舊截圖已不能證明
+表內數值（結果為不符/錯誤，或表內距離與當時網站顯示不同）時才重截並換掉舊檔。報表中已不存在的舊路線仍留在資料夾與索引裡。
+換了輸出檔名時，預設資料夾名也會跟著變，請用 `--out 既有資料夾` 指向同一個資料夾；`--fresh` 則不沿用、另存到新的 `…(2)` 資料夾並全部重截。
+資料夾已有其他內容但沒有 `index.csv` 時也會自動改存 `…(2)`，不會混在一起。
 
 資料夾內容：
 

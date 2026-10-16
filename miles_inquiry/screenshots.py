@@ -13,6 +13,13 @@ file name and ``index.csv`` say whether the screenshot confirms the number::
         index.csv                        route, site km, sheet km, status, file, URL, time
         index.html                       the same as a page with thumbnails (open in a browser)
 
+Incremental: when the target folder already holds an ``index.csv`` the run only
+captures routes that are not in it yet (``take_screenshots(..., reuse=True)``);
+routes already captured are kept as they are – a station pair's distance does not
+change, so no re-shoot and no worksheet dependence.  A kept screenshot is
+re-shot only when it no longer proves the sheet value (status mismatch/error, or
+the sheet's 距離 differs from what the page showed).
+
 Requirements are the same as ``verify-online`` (Node.js + the playwright npm package).
 """
 from __future__ import annotations
@@ -22,7 +29,7 @@ import html
 import json
 import subprocess
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence
 
@@ -61,6 +68,7 @@ class ShotResult:
     screenshot: str = ""                     # file name inside the folder ("" if none)
     captured_at: str = ""
     note: str = ""
+    reused: bool = False                     # kept from an earlier run (incremental mode)
 
 
 # ---------------------------------------------------------------------------
@@ -167,13 +175,62 @@ def _final_name(job: RouteJob, status: str, site_km: Optional[int], expected: Op
     return f"{job.route}_錯誤.png"
 
 
+def read_index(path: Path) -> List[ShotResult]:
+    """Load an ``index.csv`` written by :func:`write_index_csv` (rows without a screenshot file name are skipped)."""
+    def num(value):
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return None
+    out: List[ShotResult] = []
+    with Path(path).open("r", encoding="utf-8-sig", newline="") as fh:
+        for row in csv.DictReader(fh):
+            a, b = (row.get("origin") or "").strip().upper(), (row.get("dest") or "").strip().upper()
+            if not (a and b):
+                continue
+            out.append(ShotResult(RouteJob(a, b, num(row.get("sheet_km"))), num(row.get("site_km")),
+                                  row.get("status") or "", row.get("screenshot") or "",
+                                  row.get("captured_at") or "", row.get("note") or ""))
+    return out
+
+
+def _still_valid(old: ShotResult, job: RouteJob, out_dir: Path) -> bool:
+    """May the earlier screenshot of this route be kept for *job*?"""
+    if not old.screenshot or not (out_dir / old.screenshot).is_file():
+        return False
+    if old.status == "site_missing":
+        return True
+    if old.status == "match":
+        return job.sheet_km is None or job.sheet_km == old.site_km
+    return False        # mismatch / error: try again
+
+
 def take_screenshots(jobs: Sequence[RouteJob], out_dir: Path, db: Optional[AirportDB] = None,
                      method: str = DEFAULT_METHOD, width: int = 1280, height: int = 800,
-                     shoot: Optional[Shooter] = None) -> List[ShotResult]:
-    """Capture every job into *out_dir* (created) and write ``index.csv`` + ``index.html`` there."""
+                     shoot: Optional[Shooter] = None, reuse: bool = False) -> List[ShotResult]:
+    """Capture every job into *out_dir* (created) and write ``index.csv`` + ``index.html`` there.
+
+    With ``reuse=True`` and an ``index.csv`` already in *out_dir*, routes that were captured before (and
+    still prove the sheet value) are kept untouched; only the other jobs are shot.  Routes in the old index
+    that are not among *jobs* stay in the index (their files stay in the folder).
+    """
     shoot = shoot or run_screenshot_js
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    previous: Dict[Route, ShotResult] = {}
+    if reuse and (out_dir / "index.csv").is_file():
+        previous = {(r.job.origin, r.job.dest): r for r in read_index(out_dir / "index.csv")}
+    kept: Dict[Route, ShotResult] = {}
+    todo: List[RouteJob] = []
+    for job in jobs:
+        old = previous.get((job.origin, job.dest))
+        if old is not None and _still_valid(old, job, out_dir):
+            kept[(job.origin, job.dest)] = ShotResult(
+                RouteJob(job.origin, job.dest, job.sheet_km if job.sheet_km is not None else old.job.sheet_km),
+                old.site_km, old.status, old.screenshot, old.captured_at, old.note, reused=True)
+        else:
+            todo.append(job)
+    jobs = todo
     specs = [{"url": j.url, "path": str((out_dir / f"_tmp_{i:04d}.png").resolve())} for i, j in enumerate(jobs)]
     raw = shoot(specs) if specs else []
     by_path = {str(d.get("path")): d for d in raw if d.get("path")}
@@ -207,10 +264,23 @@ def take_screenshots(jobs: Sequence[RouteJob], out_dir: Path, db: Optional[Airpo
         if tmp.is_file():
             name = _final_name(job, status, site_km, expected)
             target = out_dir / name
-            if target.exists():
-                target.unlink()
+            old = previous.get((job.origin, job.dest))
+            for stale in {out_dir / old.screenshot if old and old.screenshot else target, target}:
+                if stale.exists():
+                    stale.unlink()            # replaced file (also under its old name if the status changed)
             tmp.replace(target)
         results.append(ShotResult(job, site_km, status, name, item.get("captured_at") or "", note))
+
+    if previous:
+        fresh = {(r.job.origin, r.job.dest): r for r in results}
+        ordered: List[ShotResult] = []
+        for key, old in previous.items():            # keep the earlier order, then the new routes
+            ordered.append(fresh.pop(key, None) or kept.pop(key, None) or replace(old, reused=True))
+        ordered.extend(r for r in results if (r.job.origin, r.job.dest) in fresh)
+        ordered.extend(kept.values())
+        results = ordered
+    else:
+        results = [kept[k] for k in kept] + results
 
     write_index_csv(results, out_dir / "index.csv")
     write_index_html(results, out_dir / "index.html")
@@ -283,8 +353,11 @@ tr.site_missing td{{background:#fff6dc}}
 
 def summarize(results: Sequence[ShotResult], out_dir: Path) -> str:
     counts = {s: sum(1 for r in results if r.status == s) for s in STATUSES}
+    reused = sum(1 for r in results if r.reused)
     lines = [f"screenshots：共 {len(results)} 條路線 → " + "、".join(f"{s}={n}" for s, n in counts.items()),
              f"截圖資料夾：{out_dir}"]
+    if reused:
+        lines.insert(1, f"增量模式：沿用既有截圖 {reused} 條，本次新截 {len(results) - reused} 條")
     for r in results:
         if r.status != "match":
             lines.append(f"  {r.status:<12} {r.job.route}  網站={r.site_km}  表內={r.job.sheet_km}  {r.note}")
