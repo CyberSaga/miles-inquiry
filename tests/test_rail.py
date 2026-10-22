@@ -1,4 +1,4 @@
-"""高鐵表 距離 from a THSR chainage table + rail_distance_overrides.csv (synthetic data only)."""
+"""高鐵表 距離 from a THSR chainage table + rail_distance_overrides.csv (synthetic data; the shipped THSR table is checked too)."""
 from __future__ import annotations
 
 import csv
@@ -7,6 +7,7 @@ from pathlib import Path
 import openpyxl
 import pytest
 
+from miles_inquiry.cli import main
 from miles_inquiry.fill import Options, fill_workbook, write_rail_todo
 from miles_inquiry.overrides import Overrides
 from miles_inquiry.rail import RailData, station_key
@@ -131,3 +132,202 @@ def test_shipped_thsr_table_reproduces_official_footprint():
         assert round(float(r["km"]) * 0.029 + 1e-9, 2) == float(r["kg_co2e"]), r
     rail = RailData.load(path.parent)
     assert rail.distance("臺北", "左營")[0].km == 343.4 and rail.distance("台中", "台北")[0].km == 161.7
+
+
+def _write(d: Path, stations=STATIONS, lookup=LOOKUP, overrides=OVERRIDES) -> Path:
+    d.mkdir(exist_ok=True)
+    (d / "thsr_distances.csv").write_text(stations, encoding="utf-8")
+    (d / "hsr_lookup.csv").write_text(lookup, encoding="utf-8")
+    (d / "rail_distance_overrides.csv").write_text(overrides, encoding="utf-8")
+    return d
+
+
+def test_override_rows_merge_spellings_through_lookup(tmp_path):
+    lookup = "value,station,review,note\n苏州北,蘇州北,,\n徐州东,徐州東,,\n"
+    # typed in either script, either direction; the same pair twice with the same km is fine
+    overrides = "from,to,km,source\n苏州北,徐州东,300,a\n徐州東,蘇州北,300,b\n"
+    rail = RailData.load(_write(tmp_path / "d1", lookup=lookup, overrides=overrides))
+    assert len(rail.overrides) == 1
+    for a, b in (("苏州北", "徐州东"), ("蘇州北", "徐州東"), ("徐州东", "蘇州北")):
+        assert rail.distance(a, b)[0].km == 300
+    clash = "from,to,km,source\n苏州北,徐州东,300,a\n徐州東,蘇州北,301,b\n"
+    with pytest.raises(ValueError, match="出現兩次且距離不同"):
+        RailData.load(_write(tmp_path / "d2", lookup=lookup, overrides=clash))
+    # a fifth column (e.g. the worksheet rows of the todo file) is ignored, never stored
+    rail = RailData.load(_write(tmp_path / "d3", lookup=lookup, overrides="from,to,km,source,rows\n苏州北,徐州东,300,a,12 45\n"))
+    assert rail.overrides == {("徐州東", "蘇州北"): (300.0, "a")}
+
+
+def test_is_non_thsr_only_for_listed_pairs(tmp_path):
+    overrides = OVERRIDES + "台北,台中,150,pinned Taiwan pair\n台北,蘇州北,999,mixed pair\n"
+    rail = RailData.load(_write(tmp_path / "d", overrides=overrides))
+    assert rail.is_non_thsr("苏州北", "徐州東") and rail.is_non_thsr("徐州東", "蘇州北")   # listed, either spelling/direction
+    assert rail.is_non_thsr("台北", "苏州北")                    # listed, one end is a THSR station
+    assert not rail.is_non_thsr("台北", "台中")                  # a pinned pair of two THSR stations stays Taiwan
+    assert not rail.is_non_thsr("南京南", "全椒")                # China, but not listed (yet): no guessing
+    assert not rail.is_non_thsr("火星", "月球")                  # junk / mistyped Taiwan stations are never "China"
+    assert not rail.is_non_thsr("台北", "斗六") and not rail.is_non_thsr("斗六", "蘇州北")   # known non-station
+    assert rail.distance("台北", "台中")[0].km == 150            # the pinned distance itself still applies
+
+
+def build_china(path: Path) -> Path:
+    wb = openpyxl.Workbook()
+    wb.active.title = "航空"
+    wb.active.append(["公司", "航班(起站)", "航班(迄站)", "距離", "人次", "碳排量", "備註"])
+    hsr = wb.create_sheet("高鐵")
+    hsr.append(["公司", "單位代號", "單位名稱", "日期", "高鐵(起站)", "高鐵(迄站)", "距離", "人次", "碳排量", "備註", "說明", "中國"])
+    for o, d, pax in (("台中", "桃園", 1),      # 2: Taiwan (桃園 missing from the synthetic table)
+                      ("台北", "台中", 2),      # 3: Taiwan
+                      ("苏州北", "徐州東", 3),  # 4: listed China pair
+                      ("南京南", "全椒", 1),    # 5: China, not listed → pending, gets a note
+                      ("台北", "斗六", 1),      # 6: known non-station
+                      ("徐州東", "苏州北", 1),  # 7: listed China pair, hand-typed number in 碳排量
+                      ("苏州北", "徐州東", 1)):  # 8: listed China pair, someone else's formula in 碳排量
+        hsr.append(["X", "B", "C", None, o, d, None, pax, None, None])
+    hsr["J2"] = 0.029
+    hsr["L2"] = 0.0262
+    hsr["I7"] = 5.5
+    hsr["I8"] = "=G8*H8*0.5"
+    wb.save(path)
+    return path
+
+
+F_J = '=IF(G{r}="","",G{r}*H{r}*$J$2)'
+F_L = '=IF(G{r}="","",G{r}*H{r}*$L$2)'
+
+
+def test_china_factor_cell_only_for_listed_pairs(lookup, rail_dir, tmp_path):
+    out = tmp_path / "c.xlsx"
+    s = run(build_china(tmp_path / "w.xlsx"), lookup, rail_dir, out, hsr_china_factor_cell="L2")
+    ws = openpyxl.load_workbook(out)["高鐵"]
+    assert ws["I3"].value == F_J.format(r=3)                     # Taiwan keeps J2
+    assert ws["I4"].value == F_L.format(r=4)                     # listed China pair
+    assert ws["I5"].value == F_J.format(r=5)                     # not listed → default factor, still pending
+    assert ws["I6"].value == F_J.format(r=6)                     # known non-station
+    assert ws["I7"].value == 5.5 and ws["I8"].value == "=G8*H8*0.5"   # hand-typed values are kept
+    assert ws["G4"].value == 300 and ws["L2"].value == 0.0262 and ws["J2"].value == 0.029
+    assert s.hsr_carbon_china_rows == 1 and s.hsr_china_factor.value == 0.0262
+    assert "非台灣高鐵路段 1 列用係數 0.0262" in s.console_summary()
+    assert "注意：" not in s.console_summary()
+
+    # --overwrite replaces hand-typed carbon on the China rows by the China formula, not the Taiwan one
+    s = run(build_china(tmp_path / "w1.xlsx"), lookup, rail_dir, tmp_path / "ow.xlsx", hsr_china_factor_cell="L2", overwrite=True)
+    ws = openpyxl.load_workbook(tmp_path / "ow.xlsx")["高鐵"]
+    assert ws["I7"].value == F_L.format(r=7) and ws["I8"].value == F_L.format(r=8) and s.hsr_carbon_china_rows == 3
+
+    # re-running the output with the same option changes nothing
+    run(out, lookup, rail_dir, tmp_path / "e.xlsx", hsr_china_factor_cell="L2")
+    a, b = (openpyxl.load_workbook(tmp_path / n)["高鐵"] for n in ("c.xlsx", "e.xlsx"))
+    assert [[c.value for c in r] for r in a.iter_rows()] == [[c.value for c in r] for r in b.iter_rows()]
+
+
+def test_without_china_factor_every_row_uses_j2_and_says_so(lookup, rail_dir, tmp_path):
+    s = run(build_china(tmp_path / "w.xlsx"), lookup, rail_dir, tmp_path / "d.xlsx")
+    ws = openpyxl.load_workbook(tmp_path / "d.xlsx")["高鐵"]
+    assert [ws.cell(r, 9).value for r in (2, 3, 4, 5, 6)] == [F_J.format(r=r) for r in (2, 3, 4, 5, 6)]
+    assert s.hsr_carbon_china_default == 1                       # row 4 is a listed China pair
+    text = s.console_summary()
+    assert "注意：1 列是非台灣高鐵路段" in text and "--hsr-china-factor-cell" in text
+    # dropping the option on a re-run refreshes our own L2 formulas back to J2 – and the notice says so
+    run(build_china(tmp_path / "w2.xlsx"), lookup, rail_dir, tmp_path / "o.xlsx", hsr_china_factor_cell="L2")
+    s = run(tmp_path / "o.xlsx", lookup, rail_dir, tmp_path / "o2.xlsx")
+    assert openpyxl.load_workbook(tmp_path / "o2.xlsx")["高鐵"]["I4"].value == F_J.format(r=4)
+    assert "注意：1 列是非台灣高鐵路段" in s.console_summary()
+
+
+def test_china_factor_cell_must_be_a_number(lookup, rail_dir, tmp_path):
+    first = tmp_path / "first.xlsx"
+    run(build_china(tmp_path / "w.xlsx"), lookup, rail_dir, first, hsr_china_factor_cell="L2")
+    wb = openpyxl.load_workbook(first)
+    wb["高鐵"]["L2"] = "=0.0262"                                  # a formula is not a number for us
+    wb.save(first)
+    s = run(first, lookup, rail_dir, tmp_path / "o.xlsx", hsr_china_factor_cell="L2")
+    ws = openpyxl.load_workbook(tmp_path / "o.xlsx")["高鐵"]
+    assert ws["I4"].value is None                                 # the earlier $L$2 formula is cleared, not left stale
+    assert ws["I3"].value == F_J.format(r=3) and ws["I5"].value == F_J.format(r=5)
+    assert any("L2 不是數字" in w and "不會沿用台灣係數" in w for w in s.warnings)
+    # fresh file, blank factor cell: nothing is written for the China rows, no fallback to the Taiwan factor
+    src = build_china(tmp_path / "w3.xlsx")
+    wb = openpyxl.load_workbook(src)
+    wb["高鐵"]["L2"] = None
+    wb.save(src)
+    run(src, lookup, rail_dir, tmp_path / "b.xlsx", hsr_china_factor_cell="L2")
+    assert openpyxl.load_workbook(tmp_path / "b.xlsx")["高鐵"]["I4"].value is None
+
+
+def test_china_factor_cell_inside_a_written_column_is_refused(lookup, rail_dir, tmp_path):
+    s = run(build_china(tmp_path / "w.xlsx"), lookup, rail_dir, tmp_path / "o.xlsx", hsr_china_factor_cell="I9")
+    ws = openpyxl.load_workbook(tmp_path / "o.xlsx")["高鐵"]
+    assert ws["I4"].value == F_J.format(r=4) and ws["I9"].value is None
+    assert any("I9" in w and "會被填入的欄位" in w for w in s.warnings)
+
+
+@pytest.mark.parametrize("bad", ["L", "2", "foo", "L2:M3", "L0", "ZZZZ99", ""])
+def test_cell_options_are_validated(bad):
+    with pytest.raises(ValueError, match="不是有效的儲存格位址"):
+        Options(hsr_factor_cell=bad)
+    if bad:
+        with pytest.raises(ValueError, match="不是有效的儲存格位址"):
+            Options(hsr_china_factor_cell=bad)
+    assert Options(hsr_factor_cell="$j$2", hsr_china_factor_cell="l2").hsr_china_factor_cell == "L2"
+
+
+def test_china_factor_cell_never_receives_notes(lookup, rail_dir, tmp_path):
+    src = build_china(tmp_path / "w.xlsx")
+    wb = openpyxl.load_workbook(src)
+    wb["高鐵"]["L2"] = None
+    wb["高鐵"]["J5"] = 0.0262          # parked in the 備註 cell of row 5, which would otherwise receive a note
+    wb.save(src)
+    run(src, lookup, rail_dir, tmp_path / "o.xlsx", hsr_china_factor_cell="J5")
+    ws = openpyxl.load_workbook(tmp_path / "o.xlsx")["高鐵"]
+    assert ws["J5"].value == 0.0262 and ws["I4"].value == '=IF(G4="","",G4*H4*$J$5)'
+
+
+def test_cli_forwards_china_factor_cell(rail_dir, lookup_path, tmp_path, capsys):
+    from tests.conftest import SYNTH_AIRPORTS
+    ap = tmp_path / "airports.csv"
+    with ap.open("w", encoding="utf-8-sig", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["iata", "name", "municipality", "iso_country", "type", "lat", "lon", "scheduled_service"])
+        for a in SYNTH_AIRPORTS:
+            w.writerow([a.iata, a.name, a.municipality, a.iso_country, a.type, a.lat, a.lon, "yes" if a.scheduled_service else "no"])
+    src = build_china(tmp_path / "w.xlsx")
+    base = ["fill", str(src), "--lookup", str(lookup_path), "--airports", str(ap), "--data-dir", str(rail_dir), "--no-report"]
+
+    assert main(base + ["-o", str(tmp_path / "a.xlsx"), "--hsr-china-factor-cell", "L2"]) == 0
+    ws = openpyxl.load_workbook(tmp_path / "a.xlsx")["高鐵"]
+    assert ws["I4"].value == F_L.format(r=4) and ws["I3"].value == F_J.format(r=3)
+
+    assert main(base + ["-o", str(tmp_path / "b.xlsx")]) == 0                      # flag absent → all J2
+    assert openpyxl.load_workbook(tmp_path / "b.xlsx")["高鐵"]["I4"].value == F_J.format(r=4)
+    assert "注意：1 列是非台灣高鐵路段" in capsys.readouterr().out
+
+    # distance filling off, but the China factor still needs the station data
+    assert main(base + ["-o", str(tmp_path / "c.xlsx"), "--no-hsr-distance", "--hsr-china-factor-cell", "L2"]) == 0
+    ws = openpyxl.load_workbook(tmp_path / "c.xlsx")["高鐵"]
+    assert ws["I4"].value == F_L.format(r=4) and ws["G4"].value is None
+
+    # a malformed cell is a normal error message, not a traceback
+    assert main(base + ["-o", str(tmp_path / "d.xlsx"), "--hsr-china-factor-cell", "foo"]) == 1
+    assert "不是有效的儲存格位址" in capsys.readouterr().err
+
+    # station table missing: the option is reported, not silently ignored
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert main(base[:-3] + ["--data-dir", str(empty), "--no-report", "-o", str(tmp_path / "e.xlsx"), "--hsr-china-factor-cell", "L2"]) == 0
+    assert "沒有高鐵站名資料" in capsys.readouterr().out
+
+
+def test_shipped_rail_data_is_consistent():
+    """data/hsr_lookup.csv + rail_distance_overrides.csv: loadable, one canonical spelling per station, no alias chains."""
+    data = Path(__file__).resolve().parent.parent / "data"
+    rail = RailData.load(data)
+    for key, (target, _note, _review) in rail.lookup.items():
+        assert not target or target == key or target not in rail.lookup or rail.lookup[target][0] == target, key
+    rows = [r for r in csv.DictReader(ln for ln in (data / "rail_distance_overrides.csv").read_text(encoding="utf-8-sig")
+                                       .splitlines() if not ln.startswith("#"))]
+    assert len(rows) == len(rail.overrides)                           # no pair listed twice
+    for r in rows:
+        assert float(r["km"]) > 0 and r["source"], r
+        for name in (r["from"], r["to"]):
+            assert rail.resolve(name).canonical == station_key(name), f"{name} 不是標準寫法"

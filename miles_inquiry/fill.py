@@ -70,12 +70,16 @@ class Options:
     carbon: bool = True            # 碳排量 = 距離*人次*係數 (Excel formulas) on 航空 and 高鐵
     hsr_sheet: str = DEFAULT_HSR_SHEET
     hsr_factor_cell: str = DEFAULT_HSR_FACTOR_CELL
+    hsr_china_factor_cell: Optional[str] = None   # 非台灣高鐵路段（中國高鐵…）的碳排係數儲存格；None＝全部用 hsr_factor_cell
     hsr_distance: bool = True      # fill 高鐵 距離 from data/thsr_distances.csv + rail_distance_overrides.csv
     max_header_scan: int = 20
 
     def __post_init__(self):
         if self.method not in METHODS:
             raise ValueError(f"method 必須是 {METHODS} 之一，收到 {self.method!r}")
+        self.hsr_factor_cell = carbon.check_coord(self.hsr_factor_cell, "--hsr-factor-cell")
+        if self.hsr_china_factor_cell:
+            self.hsr_china_factor_cell = carbon.check_coord(self.hsr_china_factor_cell, "--hsr-china-factor-cell")
 
 
 @dataclass
@@ -133,6 +137,9 @@ class FillSummary:
     hsr_carbon_rows: int = 0
     hsr_carbon_pending: int = 0                                # 高鐵 rows whose 距離 is still blank
     hsr_factor: Optional[carbon.Factor] = None
+    hsr_china_factor: Optional[carbon.Factor] = None
+    hsr_carbon_china_rows: int = 0                             # of hsr_carbon_rows: 非台灣高鐵路段，用中國係數
+    hsr_carbon_china_default: int = 0                          # 非台灣高鐵路段，但沒指定中國係數、用了 hsr_factor
     hsr_distance_counts: Counter = field(default_factory=Counter)   # thsr / override / kept / missing
     hsr_missing_pairs: Dict[Tuple[str, str], List[int]] = field(default_factory=dict)   # pair → rows
     hsr_unresolved: Counter = field(default_factory=Counter)       # value → occurrences (not a station)
@@ -164,9 +171,16 @@ class FillSummary:
             lines.append(f"高鐵表缺距離的站對 {len(self.hsr_missing_pairs)} 組（請填 data/{RAIL_OVERRIDES_FILENAME}）")
         if self.hsr_factor is not None:
             line = f"碳排量（高鐵）：{self.hsr_carbon_rows} 列，係數 {self.hsr_factor.value}（{self.hsr_factor.label}）"
+            if self.hsr_china_factor is not None:
+                line += (f"，其中非台灣高鐵路段 {self.hsr_carbon_china_rows} 列用係數 "
+                         f"{self.hsr_china_factor.value}（{self.hsr_china_factor.label}）")
             if self.hsr_carbon_pending:
                 line += f"；其中 {self.hsr_carbon_pending} 列距離空白，填入距離後公式自動計算"
             lines.append(line)
+            if self.hsr_carbon_china_default:
+                lines.append(f"注意：{self.hsr_carbon_china_default} 列是非台灣高鐵路段（{RAIL_OVERRIDES_FILENAME} 內的站對），"
+                             f"碳排量用的是 {self.hsr_factor.label} 的台灣高鐵係數；中國高鐵係數不同時，"
+                             "請另放一格並加 --hsr-china-factor-cell（每次執行都要加，含對輸出檔重跑）")
         for w in self.warnings:
             lines.append(f"警告：{w}")
         if self.unresolved:
@@ -484,7 +498,7 @@ def fill_workbook(input_path: Path, output_path: Path, lookup: Lookup,
         _fill_hsr_distance(wb, rail, summary, options)
     if options.carbon:
         _fill_air_carbon(ws, cols, lookup, summary, options)
-        _fill_hsr_carbon(wb, summary, options)
+        _fill_hsr_carbon(wb, summary, options, rail)
         if summary.carbon_counts or summary.hsr_carbon_rows:
             wb.calculation.fullCalcOnLoad = True   # no cached values from openpyxl → Excel computes on open
     wb.save(output_path)
@@ -540,7 +554,7 @@ def _fill_hsr_distance(wb, rail: RailData, summary: FillSummary, options: Option
     ws, header_row, cols = _hsr_sheet(wb, summary, options, "距離")
     if ws is None:
         return
-    factor_coord = options.hsr_factor_cell.replace("$", "").upper()
+    protected = {c.replace("$", "").upper() for c in (options.hsr_factor_cell, options.hsr_china_factor_cell) if c}
     for r in range(header_row + 1, ws.max_row + 1):
         o, d = ws.cell(r, cols["origin"]).value, ws.cell(r, cols["dest"]).value
         pax = _pax_value(ws.cell(r, cols["pax"]).value) if "pax" in cols else None
@@ -549,8 +563,8 @@ def _fill_hsr_distance(wb, rail: RailData, summary: FillSummary, options: Option
         if is_skip_value(o) or is_skip_value(d) or (pax is not None and pax == 0):
             continue
         note_cell = ws.cell(r, cols["note"]) if "note" in cols else None
-        if note_cell is not None and note_cell.coordinate == factor_coord:
-            note_cell = None    # J2 holds the 碳排係數 – never write text into it
+        if note_cell is not None and note_cell.coordinate in protected:
+            note_cell = None    # J2 (and the 中國 factor cell) hold a 碳排係數 – never write text into them
 
         def add_note(text: str):
             if note_cell is not None:
@@ -612,7 +626,7 @@ def write_rail_todo(summary: FillSummary, path: Path) -> Optional[Path]:
     return path
 
 
-def _fill_hsr_carbon(wb, summary: FillSummary, options: Options) -> None:
+def _fill_hsr_carbon(wb, summary: FillSummary, options: Options, rail: Optional[RailData] = None) -> None:
     ws, header_row, cols = _hsr_sheet(wb, summary, options, "碳排量")
     if ws is None:
         return
@@ -624,6 +638,27 @@ def _fill_hsr_carbon(wb, summary: FillSummary, options: Options) -> None:
         summary.warnings.append(f"「{ws.title}」{options.hsr_factor_cell} 不是數字，無法作為高鐵碳排係數，未填碳排量")
         return
     summary.hsr_factor = factor
+
+    china_cell = options.hsr_china_factor_cell
+    china_factor = None
+    if china_cell:
+        written_cols = {cols[role] for role in ("origin", "dest", "distance", "pax", "carbon") if role in cols}
+        cell = ws[china_cell]
+        if rail is None:
+            summary.warnings.append("指定了中國高鐵係數，但沒有高鐵站名資料（無法判斷哪些列不在台灣高鐵），全部列仍用台灣高鐵係數")
+            china_cell = None
+        elif cell.row > header_row and cell.column in written_cols:
+            summary.warnings.append(f"中國高鐵係數儲存格 {china_cell} 位在會被填入的欄位（起迄站／距離／人次／碳排量），"
+                                    "請改放在資料欄以外（例如備註欄之外的空白欄），全部列仍用台灣高鐵係數")
+            china_cell = None
+        else:
+            china_factor = carbon.read_factor(ws, china_cell)
+            if china_factor is None:
+                summary.warnings.append(f"「{ws.title}」{china_cell} 不是數字（公式也不行），無法作為中國高鐵碳排係數，"
+                                        "非台灣高鐵路段的碳排量留空（先前寫入的公式一併清除，不會沿用台灣係數）")
+            else:
+                summary.hsr_china_factor = china_factor
+
     for r in range(header_row + 1, ws.max_row + 1):
         o, d = ws.cell(r, cols["origin"]).value, ws.cell(r, cols["dest"]).value
         pax = _pax_value(ws.cell(r, cols["pax"]).value)
@@ -632,7 +667,17 @@ def _fill_hsr_carbon(wb, summary: FillSummary, options: Options) -> None:
         cell = ws.cell(r, cols["carbon"])
         if not carbon.writable(cell.value, options.overwrite):
             continue
-        cell.value = carbon.formula(r, cols["distance"], cols["pax"], factor, blank_guard=True)
+        row_factor = factor
+        if rail is not None and rail.is_non_thsr(o, d):
+            if not china_cell:
+                summary.hsr_carbon_china_default += 1
+            elif china_factor is None:
+                cell.value = None
+                continue
+            else:
+                row_factor = china_factor
+                summary.hsr_carbon_china_rows += 1
+        cell.value = carbon.formula(r, cols["distance"], cols["pax"], row_factor, blank_guard=True)
         summary.hsr_carbon_rows += 1
         if _is_blank(ws.cell(r, cols["distance"]).value):
             summary.hsr_carbon_pending += 1

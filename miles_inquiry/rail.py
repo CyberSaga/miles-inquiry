@@ -16,8 +16,11 @@ Data files (``data/``, UTF-8 with BOM, ``#`` lines are comments):
 
 ``rail_distance_overrides.csv`` – ``from,to,km,source``
     Distances for pairs that are not on the THSR line (China HSR, …) or that
-    should not use the chainage table.  Direction-independent; keys are the
-    values as typed (after the same normalisation).
+    should not use the chainage table.  Direction-independent.  Station names are
+    merged through ``hsr_lookup.csv`` first, so 苏州北 and 蘇州北 are the same row;
+    two rows for one pair must agree on ``km``.  A listed pair with at least one end that
+    is not a THSR station counts as "outside Taiwan HSR" – see ``is_non_thsr``; a pinned
+    pair of two THSR stations stays Taiwan HSR.
 """
 from __future__ import annotations
 
@@ -107,18 +110,25 @@ class RailData:
                 target = station_key(row.get("station")) if row.get("station") else ""
                 lookup[key] = (target, row.get("note", ""), is_review_flag(row.get("review")))
 
+        def canonical(value) -> str:
+            key = station_key(value)
+            return (lookup[key][0] or key) if key in lookup else key
+
         overrides: Dict[Tuple[str, str], Tuple[float, str]] = {}
         path = data_dir / OVERRIDES_FILENAME
         if path.is_file():
             for row in _rows(path):
-                a, b = station_key(row.get("from")), station_key(row.get("to"))
+                a, b = canonical(row.get("from")), canonical(row.get("to"))
                 if not a or not b or not row.get("km"):
                     continue
                 try:
                     km = float(row["km"])
                 except ValueError:
                     raise ValueError(f"{path}: {row.get('from')}-{row.get('to')} 的 km「{row['km']}」不是數字") from None
-                overrides[tuple(sorted((a, b)))] = (km, row.get("source", ""))
+                key = tuple(sorted((a, b)))
+                if key in overrides and overrides[key][0] != km:
+                    raise ValueError(f"{path}: {a}-{b} 出現兩次且距離不同（{overrides[key][0]:g} 與 {km:g} km），請保留一個")
+                overrides[key] = (km, row.get("source", ""))
         return cls(pairs, lookup, overrides, data_dir)
 
     # -- resolving ---------------------------------------------------------
@@ -131,6 +141,15 @@ class RailData:
             return RailResolution(raw, target if target in self.stations else None, target or key, note, review,
                                   known=True, non_station=not target)
         return RailResolution(raw, key if key in self.stations else None, key)
+
+    def is_non_thsr(self, a_value, b_value) -> bool:
+        """True for a trip outside Taiwan HSR (China HSR …): the pair is listed in the overrides and is not a
+        pinned pair of two THSR stations.  Only listed pairs count – a mistyped Taiwan station must never
+        silently pick up another emission factor – and known non-stations (斗六, 屏東 …) never count."""
+        ra, rb = self.resolve(a_value), self.resolve(b_value)
+        if ra.non_station or rb.non_station or (ra.station and rb.station):
+            return False
+        return tuple(sorted((ra.canonical, rb.canonical))) in self.overrides
 
     def distance(self, a_value, b_value) -> Tuple[RailDistance, RailResolution, RailResolution]:
         ra, rb = self.resolve(a_value), self.resolve(b_value)

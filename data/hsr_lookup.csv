@@ -1,5 +1,5 @@
 ﻿value,station,review,note
-# 高鐵表站名 → 標準站名（data/thsr_stations.csv 的 station，或任一標準寫法）
+# 高鐵表站名 → 標準站名（data/thsr_distances.csv 內的站名，或任一標準寫法（中國高鐵站以繁體為標準寫法））
 # 已自動處理、不必列出：臺↔台（臺北=台北）、結尾的「站」「車站」「高鐵站」（台北車站=台北）、全半形與空白
 # station 留空 = 確定不是高鐵站：距離留空，note 寫入備註
 # review = yes 時 note 一律寫入備註，請人工確認

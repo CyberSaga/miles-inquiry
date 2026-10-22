@@ -14,6 +14,7 @@ venv/
 *_report.csv
 *_verify.csv
 *_距離*
+*待補距離*.csv
 
 # Node (only needed for the optional verify-online command)
 node_modules/

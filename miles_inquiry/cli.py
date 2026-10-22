@@ -53,6 +53,10 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument("--hsr-sheet", default=DEFAULT_HSR_SHEET, help=f"高鐵工作表名稱（預設 {DEFAULT_HSR_SHEET}）")
     f.add_argument("--hsr-factor-cell", default=DEFAULT_HSR_FACTOR_CELL,
                    help=f"高鐵表碳排係數所在儲存格（預設 {DEFAULT_HSR_FACTOR_CELL}）")
+    f.add_argument("--hsr-china-factor-cell", default=None,
+                   help="高鐵表中非台灣高鐵路段（中國高鐵：rail_distance_overrides.csv 內、至少一端不是台灣高鐵站的站對）"
+                        "碳排係數所在儲存格，例如 L2；預設不設，全部列都用 --hsr-factor-cell。係數請自行填在"
+                        "起迄站／距離／人次／碳排量欄以外的儲存格，工具不會改動它；每次執行（含對輸出檔重跑）都要加")
     f.add_argument("--lookup", type=Path, default=None, help="自訂 lookup.csv 路徑")
     _add_airport_args(f)
     f.add_argument("--overrides", type=Path, default=None, help="自訂 distance_overrides.csv 路徑")
@@ -141,9 +145,10 @@ def cmd_fill(args) -> int:
                       overwrite=args.overwrite, fill_hsr_distance=args.fill_hsr_distance,
                       convert_names=not args.keep_names, carbon=not args.no_carbon,
                       hsr_sheet=args.hsr_sheet, hsr_factor_cell=args.hsr_factor_cell,
+                      hsr_china_factor_cell=args.hsr_china_factor_cell,
                       hsr_distance=not args.no_hsr_distance)
     rail = None
-    if not args.no_hsr_distance:
+    if not args.no_hsr_distance or args.hsr_china_factor_cell:
         if (data_dir / STATIONS_FILENAME).is_file():
             rail = RailData.load(data_dir)
         else:

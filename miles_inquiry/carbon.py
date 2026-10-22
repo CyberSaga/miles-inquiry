@@ -20,7 +20,7 @@ import re
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-from openpyxl.utils import get_column_letter
+from openpyxl.utils import column_index_from_string, get_column_letter
 from openpyxl.utils.cell import coordinate_from_string
 from openpyxl.worksheet.worksheet import Worksheet
 
@@ -53,6 +53,18 @@ def _number(value) -> Optional[float]:
 def absolute(coord: str) -> str:
     col, row = coordinate_from_string(coord.replace("$", "").upper())
     return f"${col}${row}"
+
+
+def check_coord(coord, label: str) -> str:
+    """``'$l$2'`` → ``'L2'``; ValueError (not a traceback) for anything that is not one cell address."""
+    try:
+        col, row = coordinate_from_string(str(coord).replace("$", "").strip().upper())
+        column_index_from_string(col)
+    except Exception:
+        row = 0
+    if row < 1:
+        raise ValueError(f"{label}「{coord}」不是有效的儲存格位址（例如 J2）")
+    return f"{col}{row}"
 
 
 def find_air_factors(ws: Worksheet) -> Dict[str, Factor]:
