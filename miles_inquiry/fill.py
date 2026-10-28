@@ -648,7 +648,11 @@ def _fill_hsr_distance(wb, rail: RailData, summary: FillSummary, options: Option
         if len(unknown) == 2:               # neither end is a THSR station → e.g. China HSR
             pair = tuple(sorted((ra.canonical, rb.canonical)))
             summary.hsr_missing_pairs.setdefault(pair, []).append(r)
-            add_note(f"清單中未有此起迄組合之距離，請在 data/{RAIL_OVERRIDES_FILENAME} 填距離")
+            if ra.review or rb.review:   # the review note above already named a corrected station: say which pair is missing
+                pair_text = f"{rail.corrected_name(ra)}↔{rail.corrected_name(rb)}"
+                add_note(f"另清單中亦未有此起迄組合（{pair_text}）之距離，請在 data/{RAIL_OVERRIDES_FILENAME} 填距離")
+            else:
+                add_note(f"清單中未有此起迄組合之距離，請在 data/{RAIL_OVERRIDES_FILENAME} 填距離")
             continue
         for role, res in unknown:
             summary.hsr_unresolved[res.raw] += 1

@@ -426,3 +426,21 @@ def test_explicit_china_cell_overrides_the_k3_default(lookup, rail_dir, tmp_path
     out = tmp_path / "o.xlsx"
     fill_workbook(src, out, lookup, Overrides({}), Options(hsr_china_factor_cell="M2"), RailData.load(rail_dir))
     assert openpyxl.load_workbook(out)["高鐵"]["I3"].value == '=IF(G3="","",G3*H3*$M$2)'
+
+
+def test_missing_pair_note_after_a_review_correction_names_the_pair(lookup, tmp_path):
+    d = _write(tmp_path / "data", lookup=LOOKUP + "广州南,廣州南,,\n广东南,廣州南,yes,疑為「广州南」誤植（沒有「广东南」站）\n")
+    wb = openpyxl.Workbook()
+    wb.active.title = "航空"
+    wb.active.append(["公司", "航班(起站)", "航班(迄站)", "距離", "人次", "碳排量", "備註"])
+    hsr = wb.create_sheet("高鐵")
+    hsr.append(["公司", "單位代號", "單位名稱", "日期", "高鐵(起站)", "高鐵(迄站)", "距離", "人次", "碳排量", "備註"])
+    for o, dd in (("广东南", "湛江西"), ("湛江西", "广东南"), ("南京南", "全椒")):
+        hsr.append(["X", "B", "C", None, o, dd, None, 1, None, None])
+    wb.save(tmp_path / "w.xlsx")
+    run(tmp_path / "w.xlsx", lookup, d, tmp_path / "o.xlsx", hsr_factor_cell="K2")   # J2 must stay free for notes
+    ws = openpyxl.load_workbook(tmp_path / "o.xlsx")["高鐵"]
+    tail = "之距離，請在 data/rail_distance_overrides.csv 填距離"
+    assert ws["J2"].value == "起站 广东南→廣州南：疑為「广州南」誤植（沒有「广东南」站）；另清單中亦未有此起迄組合（广州南↔湛江西）" + tail
+    assert ws["J3"].value == "迄站 广东南→廣州南：疑為「广州南」誤植（沒有「广东南」站）；另清單中亦未有此起迄組合（湛江西↔广州南）" + tail
+    assert ws["J4"].value == "清單中未有此起迄組合" + tail           # no correction involved: the short wording

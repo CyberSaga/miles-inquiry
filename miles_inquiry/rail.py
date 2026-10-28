@@ -142,6 +142,16 @@ class RailData:
                                   known=True, non_station=not target)
         return RailResolution(raw, key if key in self.stations else None, key)
 
+    def corrected_name(self, res: RailResolution) -> str:
+        """How to write the station a review alias points to (广东南→廣州南): the spelling the data itself uses
+        (a non-review alias such as 广州南) if there is one, else the canonical name.  For notes only."""
+        if not res.review:
+            return res.raw
+        for key, (target, _note, review) in self.lookup.items():
+            if not review and target == res.canonical and key != res.canonical:
+                return key
+        return res.canonical
+
     def is_non_thsr(self, a_value, b_value) -> bool:
         """True for a trip outside Taiwan HSR (China HSR …): the pair is listed in the overrides and is not a
         pinned pair of two THSR stations.  Only listed pairs count – a mistyped Taiwan station must never
