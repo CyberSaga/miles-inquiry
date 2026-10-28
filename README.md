@@ -55,8 +55,8 @@ python -m miles_inquiry fill 碳盤查_2026-05.xlsx
 | `--no-carbon` | 不填碳排量 |
 | `--no-highlight` | 不標色（預設把需人工處理的列塗黃底紅字，見下） |
 | `--no-hsr-distance` | 不填高鐵表距離 |
-| `--hsr-sheet NAME` / `--hsr-factor-cell CELL` | 高鐵工作表名稱（預設 `高鐵`）/ 高鐵碳排係數儲存格（預設 `J2`） |
-| `--hsr-china-factor-cell CELL` | 非台灣高鐵路段（中國高鐵）另用此格的係數，例如 `L2`；預設不設，全部列用 `J2`。限 `rail_distance_overrides.csv` 內、至少一端不是台灣高鐵站的站對；每次執行都要加（含對輸出檔重跑） |
+| `--hsr-sheet NAME` / `--hsr-factor-cell CELL` | 高鐵工作表名稱（預設 `高鐵`）/ 高鐵（台灣高鐵）碳排係數儲存格（預設 `K2`） |
+| `--hsr-china-factor-cell CELL` | 非台灣高鐵路段（中國高鐵）的係數儲存格，預設 `K3`（該格是數字才採用，否則全部列用 `K2`）。限 `rail_distance_overrides.csv` 內、至少一端不是台灣高鐵站的站對；指定其他格時，每次執行都要加（含對輸出檔重跑） |
 | `--lookup PATH` / `--airports PATH` / `--fallback-airports PATH` / `--overrides PATH` | 自訂資料檔 |
 | `--data-dir DIR` | 一次指定資料目錄（預設專案 `data/`，亦可用環境變數 `MILES_INQUIRY_DATA`） |
 | `--report PATH` / `--no-report` | 報表路徑 / 不產生報表 |
@@ -95,7 +95,7 @@ python -m miles_inquiry fill 碳盤查_2026-05.xlsx
   站對缺距離（含中國高鐵待補）
 
 只是把地名改成代碼（`澎湖`→`MZG`）、座標來源說明這類資訊性備註**不會**標色。重跑會保留標色（工具只加、不清除，
-備註已解決後請自行取消底色）；高鐵表的備註格若是係數格（如 J2）則不會標色。`--no-highlight` 完全不動格式。
+備註已解決後請自行取消底色）；高鐵表的備註格若剛好是係數格則不會標色。`--no-highlight` 完全不動格式。
 
 ### 起迄站改為 IATA 代碼
 
@@ -117,37 +117,34 @@ python -m miles_inquiry fill 碳盤查_2026-05.xlsx
   | 中國分行 | `$L$5` | 起迄機場都在中國大陸 | `=G7*H7*$L$5` |
 
   只填有距離的列（`filled`、`kept`）；排除、無法對應、疑似高鐵的列留空。表格搬位置也找得到（依文字找，不靠固定位址）。
-* **高鐵**：係數固定為 `J2`（`--hsr-factor-cell` 可改），公式為 `=IF(G2="","",G2*H2*$J$2)`：
+* **高鐵**：台灣高鐵的係數放 `K2`（`--hsr-factor-cell` 可改），公式為 `=IF(G2="","",G2*H2*$K$2)`：
   距離還沒填時顯示空白，填入距離後自動算出。人次為 0 或起迄為「無」的列不寫。
-  中國高鐵的係數與台灣不同時，把係數放在另一格（例如 `L2` = 0.0262），執行時加 `--hsr-china-factor-cell L2`：
-  站對列在 `rail_distance_overrides.csv`（且至少一端不是台灣高鐵站）的列，公式改為 `=IF(G9="","",G9*H9*$L$2)`，其餘列仍用 `J2`
-  （沒列進覆寫表的站對、已知非站名、拼錯的台灣站名都不會改用中國係數；兩端都是高鐵站的指定距離仍算台灣高鐵）。
-  該格不是數字（公式也不行）時，這些列的碳排量留空、先前寫入的公式一併清除並警告，不會悄悄改用台灣係數。
+  建議兩個係數與出處連續放在 `K2:L3`：
+
+  | K | L |
+  |---|---|
+  | `0.0290000000`（台灣高鐵，K2） | 環境部產品碳足跡標籤-2025-高速鐵路旅客運輸服務-高鐵 |
+  | `0.0262000000`（中國高鐵，K3） | 中国产品全生命周期温室气体排放系数-2022-高铁 |
+
+  站對列在 `rail_distance_overrides.csv`（且至少一端不是台灣高鐵站）的列（中國高鐵），公式改為 `=IF(G9="","",G9*H9*$K$3)`，
+  其餘列用 `K2`。`K3` 是數字才啟用，不是數字（或空白）就全部列用 `K2`；要用別格就加 `--hsr-china-factor-cell M2`
+  （指定了就每次執行都要加，含對輸出檔重跑，否則已算好的中國列會被改回台灣係數）。
+  沒列進覆寫表的站對、已知非站名、拼錯的台灣站名都不會改用中國係數；兩端都是高鐵站的指定距離仍算台灣高鐵。
+  明確指定的格不是數字（公式也不行）時，這些列的碳排量留空、先前寫入的公式一併清除並警告，不會悄悄改用台灣係數。
   係數格請放在起迄站／距離／人次／碳排量欄以外；工具不會把備註寫進去，也不會改動它。
-  **旗標每次執行都要加**：對輸出檔重跑時沒加，本工具先前寫的 `$L$2` 公式會被刷新回 `$J$2`（畫面會有「注意：N 列是非台灣高鐵路段」的提醒）。
-* 碳排量欄是空白、範本文字 `=距離*人次*係數`、或本工具先前寫的公式時才會寫入；其他手打的值或公式保留不動
-  （列在畫面上，`--overwrite` 才覆寫）。
-
-### 高鐵表距離
-
-高鐵表的「距離」依下列順序填入（已有值的格子保留，`--overwrite` 才覆寫；`--no-hsr-distance` 不填）：
-
-1. `data/rail_distance_overrides.csv`（`from,to,km,source`，方向不拘）：不在台灣高鐵線上的站對（中國高鐵）。
-   站名經 `hsr_lookup.csv` 合併後比對，簡體、繁體寫法都能對上（`苏州北` = `蘇州北`）；同一站對重複出現且公里數不同時載入會報錯。
-   出貨的檔案只有範本：真實行程的站對屬於實際差旅路線，放在本機維護，不要提交到公開 repo。
 2. `data/thsr_distances.csv`（`from,to,kg_co2e,km`）：台灣高鐵 12 站、66 組站對的距離，取自**高鐵官網**
    [「高速鐵路旅客運輸服務碳足跡」](https://www.thsrc.com.tw/ArticleContent/5a1f4c72-b564-4706-bcdd-efbda93c3d93)
    的「車站間旅客運輸碳足跡」表（kg CO2e／每人次，依環境部碳標 29 gCO2e／人公里計算），`km = kg_co2e ÷ 0.029` 取 1 位小數。
-   因此高鐵表 `距離 × 人次 × J2(0.029)` 會等於高鐵公司公布的每人次碳足跡。
+   因此高鐵表 `距離 × 人次 × K2(0.029)` 會等於高鐵公司公布的每人次碳足跡。
    不用維基百科的沿線里程：維基可任意編輯、非官方，而且數字比官方表短約 1.3%（例如台北—左營維基 339.1 km、官方換算 343.4 km）。
-   官方表更新（新碳標）時，整份換掉並同步更新高鐵表 J2。
+   官方表更新（新碳標）時，整份換掉並同步更新高鐵表 K2。
 3. 都查不到：距離留空並寫備註。若起迄兩站都不是台灣高鐵站（例如中國高鐵），會另外輸出
    `<輸出檔名>_高鐵待補距離.csv`，每組站對一列並附上列號。填好 `km`、`source` 後貼進 `rail_distance_overrides.csv`，再重跑一次。
 
 站名寫法由 `data/hsr_lookup.csv`（`value,station,review,note`）統一：臺/台、結尾的「站」「車站」會自動忽略；
 `高雄→左營`、`粄橋→板橋`（review，寫入備註）、`苏州北→蘇州北`（簡繁合併，以繁體為標準寫法）等列在表中。
 新站名（含簡體寫法）對不上時照同樣格式補一行。`station` 留空表示確定不是高鐵站
-（斗六、屏東、旗山分行…），備註會說明。J2 是碳排係數，工具絕不會把備註寫進那一格。
+（斗六、屏東、旗山分行…），備註會說明。K2、K3 是碳排係數，工具絕不會把備註寫進那兩格。
 
 ## 資料檔（`data/`）
 
@@ -327,10 +324,10 @@ Taiwan's HSR corridor are flagged as probable HSR trips (`疑似高鐵(...)`, di
 unless `--fill-hsr-distance`).
 It also writes 碳排量 (carbon) as live Excel formulas `=距離*人次*係數`: on 航空 the factor is
 picked by category from the label/number pairs in K3:L5 (both airports in Taiwan → 國內線,
-both in mainland China → 中國分行, otherwise 國際線); on 高鐵 the factor is `J2` and the formula
-is `=IF(G2="","",G2*H2*$J$2)` so it stays blank until a distance is entered (`--no-carbon` disables this).
-Trips outside Taiwan HSR (China HSR: the pairs listed in `data/rail_distance_overrides.csv`) can use a separate factor cell via
-`--hsr-china-factor-cell L2` (pass it on every run, re-runs included); without it every 高鐵 row uses `J2`.
+both in mainland China → 中國分行, otherwise 國際線); on 高鐵 the factor is `K2` and the formula
+is `=IF(G2="","",G2*H2*$K$2)` so it stays blank until a distance is entered (`--no-carbon` disables this).
+Trips outside Taiwan HSR (China HSR: the pairs listed in `data/rail_distance_overrides.csv`) use the factor in `K3` when that cell holds a number (otherwise every 高鐵 row uses `K2`); another cell can be chosen with
+`--hsr-china-factor-cell M2` (pass it on every run, re-runs included).
 
 ```bash
 pip install -e .

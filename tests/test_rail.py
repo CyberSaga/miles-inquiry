@@ -79,6 +79,7 @@ def build(path: Path) -> Path:
 
 
 def run(path, lookup, rail_dir, out, **kw):
+    kw.setdefault("hsr_factor_cell", "J2")      # the synthetic workbooks keep the factor in J2; the shipped default is K2
     return fill_workbook(path, out, lookup, Overrides({}), Options(**kw), RailData.load(rail_dir))
 
 
@@ -94,7 +95,7 @@ def test_fill_hsr_sheet(lookup, rail_dir, tmp_path):
     assert g[5] == 153 and j[5] == "起站 粄橋→板橋：疑為板橋誤植"
     assert g[6] is None and j[6] == "迄站「斗六」非高鐵站（斗六為台鐵站），請確認"
     assert g[7] == 300 and j[7] is None
-    assert g[8] is None and "非台灣高鐵路段（南京南→全椒）" in j[8]
+    assert g[8] is None and "清單中未有此起迄組合之距離，請在 data/rail_distance_overrides.csv 填距離" in j[8] and "非台灣高鐵路段" not in j[8]
     assert g[10] is None and j[10] == "排除"
     assert g[11] is None and j[11] == "無法對應高鐵站：火星，請更新 data/hsr_lookup.csv"
     assert g[12] is None and j[12] == "data/thsr_distances.csv 缺 台中-左營 距離" and s.hsr_missing_thsr["台中-左營"] == 1
@@ -292,7 +293,8 @@ def test_cli_forwards_china_factor_cell(rail_dir, lookup_path, tmp_path, capsys)
         for a in SYNTH_AIRPORTS:
             w.writerow([a.iata, a.name, a.municipality, a.iso_country, a.type, a.lat, a.lon, "yes" if a.scheduled_service else "no"])
     src = build_china(tmp_path / "w.xlsx")
-    base = ["fill", str(src), "--lookup", str(lookup_path), "--airports", str(ap), "--data-dir", str(rail_dir), "--no-report"]
+    base = ["fill", str(src), "--lookup", str(lookup_path), "--airports", str(ap), "--data-dir", str(rail_dir), "--no-report",
+            "--hsr-factor-cell", "J2"]
 
     assert main(base + ["-o", str(tmp_path / "a.xlsx"), "--hsr-china-factor-cell", "L2"]) == 0
     ws = openpyxl.load_workbook(tmp_path / "a.xlsx")["高鐵"]
@@ -314,7 +316,7 @@ def test_cli_forwards_china_factor_cell(rail_dir, lookup_path, tmp_path, capsys)
     # station table missing: the option is reported, not silently ignored
     empty = tmp_path / "empty"
     empty.mkdir()
-    assert main(base[:-3] + ["--data-dir", str(empty), "--no-report", "-o", str(tmp_path / "e.xlsx"), "--hsr-china-factor-cell", "L2"]) == 0
+    assert main(base[:-5] + ["--data-dir", str(empty), "--no-report", "--hsr-factor-cell", "J2", "-o", str(tmp_path / "e.xlsx"), "--hsr-china-factor-cell", "L2"]) == 0
     assert "沒有高鐵站名資料" in capsys.readouterr().out
 
 
@@ -371,3 +373,56 @@ def test_painting_never_touches_the_factor_cell(lookup, rail_dir, tmp_path):
     ws = openpyxl.load_workbook(out)["高鐵"]
     # row 2 (桃園 unknown): its 備註 is the J2 factor cell → only 起站/迄站 are painted, J2 is left alone
     assert _painted(ws["E2"]) and _painted(ws["F2"]) and not _painted(ws["J2"])
+
+
+def build_layout(path: Path, china=True) -> Path:
+    """The bank's layout: Taiwan factor in K2, China factor in K3, sources in L2:L3 (no factor in 備註 column J)."""
+    wb = openpyxl.Workbook()
+    wb.active.title = "航空"
+    wb.active.append(["公司", "航班(起站)", "航班(迄站)", "距離", "人次", "碳排量", "備註"])
+    hsr = wb.create_sheet("高鐵")
+    hsr.append(["公司", "單位代號", "單位名稱", "日期", "高鐵(起站)", "高鐵(迄站)", "距離", "人次", "碳排量", "備註"])
+    for o, d in (("台北", "台中"), ("苏州北", "徐州東"), ("南京南", "全椒")):
+        hsr.append(["X", "B", "C", None, o, d, None, 1, None, None])
+    hsr["K2"], hsr["L2"] = 0.029, "環境部產品碳足跡標籤-2025-高速鐵路旅客運輸服務-高鐵"
+    if china:
+        hsr["K3"], hsr["L3"] = 0.0262, "中国产品全生命周期温室气体排放系数-2022-高铁"
+    wb.save(path)
+    return path
+
+
+def test_default_layout_taiwan_k2_china_k3(lookup, rail_dir, tmp_path):
+    out = tmp_path / "o.xlsx"
+    s = fill_workbook(build_layout(tmp_path / "w.xlsx"), out, lookup, Overrides({}), Options(), RailData.load(rail_dir))
+    ws = openpyxl.load_workbook(out)["高鐵"]
+    assert ws["I2"].value == '=IF(G2="","",G2*H2*$K$2)'                    # Taiwan
+    assert ws["I3"].value == '=IF(G3="","",G3*H3*$K$3)'                    # listed China pair
+    assert ws["I4"].value == '=IF(G4="","",G4*H4*$K$2)'                    # unlisted China pair: pending, default factor
+    assert ws["J4"].value == "清單中未有此起迄組合之距離，請在 data/rail_distance_overrides.csv 填距離"
+    assert ws["K2"].value == 0.029 and ws["K3"].value == 0.0262 and ws["L3"].value.startswith("中国产品")
+    assert s.hsr_china_factor.value == 0.0262 and s.hsr_carbon_china_rows == 1
+    assert not any("高鐵" in w for w in s.warnings)
+    # nothing changes on a re-run, with no flag at all
+    fill_workbook(out, tmp_path / "o2.xlsx", lookup, Overrides({}), Options(), RailData.load(rail_dir))
+    a, b = (openpyxl.load_workbook(tmp_path / n)["高鐵"] for n in ("o.xlsx", "o2.xlsx"))
+    assert [[c.value for c in r] for r in a.iter_rows()] == [[c.value for c in r] for r in b.iter_rows()]
+
+
+def test_default_china_cell_is_optional(lookup, rail_dir, tmp_path):
+    out = tmp_path / "o.xlsx"
+    s = fill_workbook(build_layout(tmp_path / "w.xlsx", china=False), out, lookup, Overrides({}), Options(),
+                      RailData.load(rail_dir))
+    ws = openpyxl.load_workbook(out)["高鐵"]
+    assert ws["I3"].value == '=IF(G3="","",G3*H3*$K$2)'                    # no K3 → one factor, no warning
+    assert not any("高鐵" in w for w in s.warnings) and s.hsr_china_factor is None and s.hsr_carbon_china_default == 1
+    assert "請填在 K3" in s.console_summary()
+
+
+def test_explicit_china_cell_overrides_the_k3_default(lookup, rail_dir, tmp_path):
+    src = build_layout(tmp_path / "w.xlsx")
+    wb = openpyxl.load_workbook(src)
+    wb["高鐵"]["M2"] = 0.5
+    wb.save(src)
+    out = tmp_path / "o.xlsx"
+    fill_workbook(src, out, lookup, Overrides({}), Options(hsr_china_factor_cell="M2"), RailData.load(rail_dir))
+    assert openpyxl.load_workbook(out)["高鐵"]["I3"].value == '=IF(G3="","",G3*H3*$M$2)'

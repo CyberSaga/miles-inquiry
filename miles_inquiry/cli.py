@@ -14,7 +14,7 @@ from typing import Optional, Sequence
 
 from . import __version__, default_data_dir
 from .airports import GCM_FILENAME, OURAIRPORTS_FILENAME, AirportDB, update_all
-from .fill import (DEFAULT_HSR_FACTOR_CELL, DEFAULT_HSR_SHEET, DEFAULT_SHEET, Options, default_output_path,
+from .fill import (DEFAULT_HSR_CHINA_FACTOR_CELL, DEFAULT_HSR_FACTOR_CELL, DEFAULT_HSR_SHEET, DEFAULT_SHEET, Options, default_output_path,
                    default_report_path, fill_workbook, next_free_path, write_rail_todo, write_report)
 from .geo import DEFAULT_METHOD, HAVE_GEOGRAPHICLIB, METHODS
 from .lookup import Lookup
@@ -54,11 +54,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="不填高鐵表距離（預設依 data/thsr_distances.csv、rail_distance_overrides.csv 填入）")
     f.add_argument("--hsr-sheet", default=DEFAULT_HSR_SHEET, help=f"高鐵工作表名稱（預設 {DEFAULT_HSR_SHEET}）")
     f.add_argument("--hsr-factor-cell", default=DEFAULT_HSR_FACTOR_CELL,
-                   help=f"高鐵表碳排係數所在儲存格（預設 {DEFAULT_HSR_FACTOR_CELL}）")
+                   help=f"高鐵表（台灣高鐵）碳排係數所在儲存格（預設 {DEFAULT_HSR_FACTOR_CELL}）")
     f.add_argument("--hsr-china-factor-cell", default=None,
                    help="高鐵表中非台灣高鐵路段（中國高鐵：rail_distance_overrides.csv 內、至少一端不是台灣高鐵站的站對）"
-                        "碳排係數所在儲存格，例如 L2；預設不設，全部列都用 --hsr-factor-cell。係數請自行填在"
-                        "起迄站／距離／人次／碳排量欄以外的儲存格，工具不會改動它；每次執行（含對輸出檔重跑）都要加")
+                        f"碳排係數所在儲存格；預設 {DEFAULT_HSR_CHINA_FACTOR_CELL}，該格是數字才採用，否則全部列都用 --hsr-factor-cell。"
+                        "指定其他格時，係數請填在起迄站／距離／人次／碳排量欄以外，工具不會改動它；"
+                        "指定了就每次執行（含對輸出檔重跑）都要加")
     f.add_argument("--lookup", type=Path, default=None, help="自訂 lookup.csv 路徑")
     _add_airport_args(f)
     f.add_argument("--overrides", type=Path, default=None, help="自訂 distance_overrides.csv 路徑")
@@ -150,10 +151,11 @@ def cmd_fill(args) -> int:
                       hsr_china_factor_cell=args.hsr_china_factor_cell,
                       highlight=not args.no_highlight, hsr_distance=not args.no_hsr_distance)
     rail = None
-    if not args.no_hsr_distance or args.hsr_china_factor_cell:
+    wants_rail = not args.no_hsr_distance
+    if wants_rail or not args.no_carbon or args.hsr_china_factor_cell:   # 碳排量 also needs it to tell 中國高鐵 rows apart
         if (data_dir / STATIONS_FILENAME).is_file():
             rail = RailData.load(data_dir)
-        else:
+        elif wants_rail:
             print(f"注意：找不到 {data_dir / STATIONS_FILENAME}，高鐵表距離不填")
     summary = fill_workbook(args.input, output, lookup, overrides, options, rail)
 

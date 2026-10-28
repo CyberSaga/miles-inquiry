@@ -10,7 +10,7 @@ They are located by label, not by fixed address, so moving the table keeps worki
 Each route is classified by the airports' countries: both in Taiwan → 國內線, both
 in mainland China → 中國分行, anything else (HK/MO included) → 國際線.
 
-高鐵: a single factor cell (J2 by default).  Its 距離 column may still be empty,
+高鐵: a single factor cell (K2 by default; K3 for the China factor).  Its 距離 column may still be empty,
 so the formula there is ``=IF(G2="","",G2*H2*$J$2)`` and fills itself in once a
 distance is typed.
 """
