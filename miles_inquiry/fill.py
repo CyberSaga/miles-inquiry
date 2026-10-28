@@ -6,11 +6,14 @@ import re
 import unicodedata
 import zipfile
 from collections import Counter
+from copy import copy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import openpyxl
+from openpyxl.styles import PatternFill
+from openpyxl.styles.colors import Color
 from openpyxl.utils.exceptions import InvalidFileException
 from openpyxl.worksheet.worksheet import Worksheet
 
@@ -28,6 +31,8 @@ NOTE_SEP = "；"
 DEFAULT_SHEET = "航空"
 DEFAULT_HSR_SHEET = "高鐵"
 DEFAULT_HSR_FACTOR_CELL = "J2"
+FLAG_FILL_RGB = "FFFFFF00"   # Excel 標準色彩「黃色」
+FLAG_FONT_RGB = "FFFF0000"   # Excel 標準色彩「紅色」
 SUPPORTED_SUFFIXES = (".xlsx", ".xlsm")
 
 # header text (normalised: NFKC, whitespace removed) → role
@@ -71,6 +76,7 @@ class Options:
     hsr_sheet: str = DEFAULT_HSR_SHEET
     hsr_factor_cell: str = DEFAULT_HSR_FACTOR_CELL
     hsr_china_factor_cell: Optional[str] = None   # 非台灣高鐵路段（中國高鐵…）的碳排係數儲存格；None＝全部用 hsr_factor_cell
+    highlight: bool = True         # 需人工處理的列：起站、迄站、備註塗成黃底紅字（航空、高鐵）
     hsr_distance: bool = True      # fill 高鐵 距離 from data/thsr_distances.csv + rail_distance_overrides.csv
     max_header_scan: int = 20
 
@@ -134,6 +140,8 @@ class FillSummary:
     warnings: List[str] = field(default_factory=list)
     carbon_counts: Counter = field(default_factory=Counter)   # 航空 category label → rows with a 碳排量 formula
     carbon_kept: List[int] = field(default_factory=list)       # rows whose 碳排量 already held other content
+    flagged_air: int = 0                                       # 航空 rows painted 黃底紅字
+    flagged_hsr: int = 0                                       # 高鐵 rows painted 黃底紅字
     hsr_carbon_rows: int = 0
     hsr_carbon_pending: int = 0                                # 高鐵 rows whose 距離 is still blank
     hsr_factor: Optional[carbon.Factor] = None
@@ -181,6 +189,8 @@ class FillSummary:
                 lines.append(f"注意：{self.hsr_carbon_china_default} 列是非台灣高鐵路段（{RAIL_OVERRIDES_FILENAME} 內的站對），"
                              f"碳排量用的是 {self.hsr_factor.label} 的台灣高鐵係數；中國高鐵係數不同時，"
                              "請另放一格並加 --hsr-china-factor-cell（每次執行都要加，含對輸出檔重跑）")
+        if self.flagged_air or self.flagged_hsr:
+            lines.append(f"需人工處理、起站／迄站／備註已塗黃底紅字：航空 {self.flagged_air} 列、高鐵 {self.flagged_hsr} 列")
         for w in self.warnings:
             lines.append(f"警告：{w}")
         if self.unresolved:
@@ -272,6 +282,17 @@ def _pax_value(value) -> Optional[float]:
         return float(text)
     except ValueError:
         return None
+
+
+def flag_cells(*cells) -> None:
+    """Paint cells 黃底紅字 (standard yellow fill, standard red font); other font attributes stay."""
+    for cell in cells:
+        if cell is None:
+            continue
+        font = copy(cell.font)
+        font.color = Color(rgb=FLAG_FONT_RGB)
+        cell.font = font
+        cell.fill = PatternFill(fill_type="solid", start_color=FLAG_FILL_RGB, end_color=FLAG_FILL_RGB)
 
 
 def airport_source_note(ap) -> str:
@@ -389,10 +410,19 @@ def fill_workbook(input_path: Path, output_path: Path, lookup: Lookup,
         result = RowResult(r, res_o.raw, res_d.raw, res_o.iata, res_d.iata, None, "")
         report_notes: List[str] = []
 
-        def add_cell_note(text: str):
+        flagged = False
+
+        def add_cell_note(text: str, human: bool = False):
+            """human=True: the note asks a person to act → row is painted 黃底紅字."""
+            nonlocal flagged
             result.cell_notes.append(text)
             if note_cell is not None:
                 note_cell.value = append_note(note_cell.value, text)
+            if human and options.highlight:
+                flag_cells(o_cell, d_cell, note_cell)
+                if not flagged:
+                    flagged = True
+                    summary.flagged_air += 1
 
         # 1. skipped rows ---------------------------------------------------
         if res_o.status == "skip" or res_d.status == "skip" or (pax is not None and pax == 0):
@@ -408,7 +438,7 @@ def fill_workbook(input_path: Path, output_path: Path, lookup: Lookup,
         blanks = [(role, res) for role, res in (("起站", res_o), ("迄站", res_d)) if res.status == "blank"]
         if blanks:
             for role, res in blanks:
-                add_cell_note(unresolved_note(res, lookup_name, role))
+                add_cell_note(unresolved_note(res, lookup_name, role), human=True)
             summary.blank_rows.append(r)
             result.status = "unresolved"
             if not _is_blank(dist_cell.value):
@@ -420,7 +450,7 @@ def fill_workbook(input_path: Path, output_path: Path, lookup: Lookup,
         # 2. HSR-like (checked first: an HSR row gets only the HSR note) ------
         hsr = is_hsr_like(o_cell.value, d_cell.value, res_o.iata, res_d.iata)
         if hsr:
-            add_cell_note(hsr_note(o_cell.value, d_cell.value))
+            add_cell_note(hsr_note(o_cell.value, d_cell.value), human=True)
             result.status = "hsr"
             if not options.fill_hsr_distance:
                 if not _is_blank(dist_cell.value):
@@ -442,7 +472,7 @@ def fill_workbook(input_path: Path, output_path: Path, lookup: Lookup,
                 if not cell_note:   # correction / review notes already read "原值→代碼"
                     add_cell_note(converted_note(role, original, res.iata))
             if cell_note:
-                add_cell_note(f"{role} {cell_note}")
+                add_cell_note(f"{role} {cell_note}", human=True)
             else:
                 report_note = res.note_for_report
                 if report_note:
@@ -450,13 +480,13 @@ def fill_workbook(input_path: Path, output_path: Path, lookup: Lookup,
             if res.via == "direct":
                 ap = lookup.airports.get(res.iata)
                 if ap is not None and not ap.scheduled_service:
-                    add_cell_note(f"{role} {res.iata}（{ap.name}, {ap.iso_country}）無定期航班，請確認代碼")
+                    add_cell_note(f"{role} {res.iata}（{ap.name}, {ap.iso_country}）無定期航班，請確認代碼", human=True)
 
         # 4. unresolved -----------------------------------------------------
         unresolved = [res for res in (res_o, res_d) if res.status == "unresolved"]
         if unresolved:
             for res in unresolved:
-                add_cell_note(unresolved_note(res, lookup_name))
+                add_cell_note(unresolved_note(res, lookup_name), human=True)
                 (summary.unresolved_known if res.via == "lookup" else summary.unresolved)[res.raw] += 1
             result.status = "unresolved"
             if not _is_blank(dist_cell.value):
@@ -566,9 +596,19 @@ def _fill_hsr_distance(wb, rail: RailData, summary: FillSummary, options: Option
         if note_cell is not None and note_cell.coordinate in protected:
             note_cell = None    # J2 (and the 中國 factor cell) hold a 碳排係數 – never write text into them
 
+        o_cell, d_cell = ws.cell(r, cols["origin"]), ws.cell(r, cols["dest"])
+        flagged = False
+
         def add_note(text: str):
+            """Every HSR note asks a person to act → the row is painted 黃底紅字."""
+            nonlocal flagged
             if note_cell is not None:
                 note_cell.value = append_note(note_cell.value, text)
+            if options.highlight:
+                flag_cells(o_cell, d_cell, note_cell)
+                if not flagged:
+                    flagged = True
+                    summary.flagged_hsr += 1
 
         blanks = [role for role, v in (("起站", o), ("迄站", d)) if _is_blank(v)]
         if blanks:

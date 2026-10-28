@@ -48,6 +48,8 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument("--keep-names", action="store_true",
                    help="起迄站保留原文（預設把 澎湖、HONG KONG 等改為 IATA 代碼，原值寫入備註）")
     f.add_argument("--no-carbon", action="store_true", help="不填碳排量（預設以公式 =距離*人次*係數 填入航空與高鐵表）")
+    f.add_argument("--no-highlight", action="store_true",
+                   help="不標色（預設把備註要求人工處理的列，其起站、迄站、備註塗成黃底紅字，航空、高鐵表都一樣）")
     f.add_argument("--no-hsr-distance", action="store_true",
                    help="不填高鐵表距離（預設依 data/thsr_distances.csv、rail_distance_overrides.csv 填入）")
     f.add_argument("--hsr-sheet", default=DEFAULT_HSR_SHEET, help=f"高鐵工作表名稱（預設 {DEFAULT_HSR_SHEET}）")
@@ -146,7 +148,7 @@ def cmd_fill(args) -> int:
                       convert_names=not args.keep_names, carbon=not args.no_carbon,
                       hsr_sheet=args.hsr_sheet, hsr_factor_cell=args.hsr_factor_cell,
                       hsr_china_factor_cell=args.hsr_china_factor_cell,
-                      hsr_distance=not args.no_hsr_distance)
+                      highlight=not args.no_highlight, hsr_distance=not args.no_hsr_distance)
     rail = None
     if not args.no_hsr_distance or args.hsr_china_factor_cell:
         if (data_dir / STATIONS_FILENAME).is_file():

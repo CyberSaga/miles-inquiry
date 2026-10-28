@@ -421,3 +421,52 @@ def test_cli_file_errors_are_chinese_not_tracebacks(workbook, lookup_path, tmp_p
     assert main(["fill", str(workbook), "-o", str(tmp_path / "r.xlsx"), "--lookup", str(lookup_path), "--airports", str(ap),
                  "--report", str(rep_dir), "--overwrite-output"]) == 1
     assert capsys.readouterr().err.startswith("錯誤：")
+
+
+def _painted(cell) -> bool:
+    return (cell.fill.fill_type == "solid" and cell.fill.start_color.rgb == "FFFFFF00"
+            and cell.font.color is not None and cell.font.color.rgb == "FFFF0000")
+
+
+def test_rows_needing_a_human_are_painted_yellow_with_red_text(workbook, lookup, tmp_path):
+    out = tmp_path / "out.xlsx"
+    summary = run(workbook, lookup, out)
+    ws = openpyxl.load_workbook(out)["航空"]
+    asks = {2, 5, 6, 7, 11, 12, 16, 18, 19, 21, 22, 23}      # unresolved / 疑似高鐵 / 誤植 / review / 無定期航班 / 空白
+    rows = range(2, len(ROWS) + 2)
+    for r in rows:
+        cells = [ws.cell(r, c) for c in (5, 6, 10)]           # 起站、迄站、備註
+        assert all(_painted(c) for c in cells) == (r in asks), r
+        assert not any(_painted(c) for c in cells) or all(_painted(c) for c in cells), r
+        assert not _painted(ws.cell(r, 7)) and not _painted(ws.cell(r, 4)), r   # nothing else is touched
+    assert summary.flagged_air == len(asks) and "航空 12 列" in summary.console_summary()
+    # converting a name (澎湖→MZG) is informational, a note on its own does not paint the row
+    assert ws["J4"].value.startswith("起站原值") and not _painted(ws["J4"])
+    assert ws["A1"].font.name == "微軟正黑體" and ws["A1"].fill.start_color.rgb == "FFDDDDDD"
+
+
+def test_painting_keeps_font_attributes_and_is_idempotent(workbook, lookup, tmp_path):
+    wb = openpyxl.load_workbook(workbook)
+    wb["航空"]["E5"].font = Font(name="微軟正黑體", bold=True, size=14)
+    wb.save(workbook)
+    run(workbook, lookup, tmp_path / "1.xlsx")
+    run(tmp_path / "1.xlsx", lookup, tmp_path / "2.xlsx")
+    for name in ("1.xlsx", "2.xlsx"):
+        cell = openpyxl.load_workbook(tmp_path / name)["航空"]["E5"]
+        assert _painted(cell) and (cell.font.name, cell.font.bold, cell.font.size) == ("微軟正黑體", True, 14)
+
+
+def test_no_highlight_leaves_formatting_alone(workbook, lookup, tmp_path):
+    summary = run(workbook, lookup, tmp_path / "out.xlsx", highlight=False)
+    ws = openpyxl.load_workbook(tmp_path / "out.xlsx")["航空"]
+    assert not any(_painted(c) for row in ws.iter_rows() for c in row) and summary.flagged_air == 0
+    assert "塗黃底紅字" not in summary.console_summary()
+    assert ws["J5"].value.startswith("疑似高鐵")                # the notes themselves are still written
+
+
+def test_cli_no_highlight_flag(workbook, lookup_path, tmp_path):
+    for flag, expect in ((None, True), ("--no-highlight", False)):
+        out = tmp_path / f"{expect}.xlsx"
+        argv = ["fill", str(workbook), "-o", str(out), "--lookup", str(lookup_path), "--no-report"] + ([flag] if flag else [])
+        assert main(argv) == 0
+        assert _painted(openpyxl.load_workbook(out)["航空"]["E5"]) == expect

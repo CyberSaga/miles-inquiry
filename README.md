@@ -53,6 +53,7 @@ python -m miles_inquiry fill 碳盤查_2026-05.xlsx
 | `--fill-hsr-distance` | 疑似高鐵列仍填入飛航距離（預設留空） |
 | `--keep-names` | 起迄站保留原文，不改為 IATA 代碼（預設會改，見下） |
 | `--no-carbon` | 不填碳排量 |
+| `--no-highlight` | 不標色（預設把需人工處理的列塗黃底紅字，見下） |
 | `--no-hsr-distance` | 不填高鐵表距離 |
 | `--hsr-sheet NAME` / `--hsr-factor-cell CELL` | 高鐵工作表名稱（預設 `高鐵`）/ 高鐵碳排係數儲存格（預設 `J2`） |
 | `--hsr-china-factor-cell CELL` | 非台灣高鐵路段（中國高鐵）另用此格的係數，例如 `L2`；預設不設，全部列用 `J2`。限 `rail_distance_overrides.csv` 內、至少一端不是台灣高鐵站的站對；每次執行都要加（含對輸出檔重跑） |
@@ -83,6 +84,18 @@ python -m miles_inquiry fill 碳盤查_2026-05.xlsx
 * 代碼**不在 greatcirclemap 資料庫**（如 `SAI`）：`SAI 不在 greatcirclemap 資料庫，座標取自 OurAirports（…）`
 * 代碼在網站資料與 OurAirports 相距超過 50 km（代碼已重新指派，如 `KTI` 網站仍是 Kratie、現為金邊德崇）：
   改用 OurAirports 座標並註明 `greatcirclemap 網站數字不適用`
+
+### 需人工處理的列：黃底紅字
+
+備註寫了要人處理的事，該列的**起站、迄站、備註**三格會塗成黃底紅字（Excel 標準色彩：黃色 `FFFF00`、紅色 `FF0000`；
+字型的其他屬性不變），航空、高鐵兩張表都一樣，一眼就能找出來：
+
+* 航空：無法對應機場代碼、起站／迄站空白、疑似高鐵、誤植修正與 `review=yes`、無定期航班
+* 高鐵：站名誤植（review）、非高鐵站（斗六、屏東、旗山分行…）、一格填兩站、起迄同站、站名對不上、
+  站對缺距離（含中國高鐵待補）
+
+只是把地名改成代碼（`澎湖`→`MZG`）、座標來源說明這類資訊性備註**不會**標色。重跑會保留標色（工具只加、不清除，
+備註已解決後請自行取消底色）；高鐵表的備註格若是係數格（如 J2）則不會標色。`--no-highlight` 完全不動格式。
 
 ### 起迄站改為 IATA 代碼
 

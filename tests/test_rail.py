@@ -331,3 +331,43 @@ def test_shipped_rail_data_is_consistent():
         assert float(r["km"]) > 0 and r["source"], r
         for name in (r["from"], r["to"]):
             assert rail.resolve(name).canonical == station_key(name), f"{name} 不是標準寫法"
+
+
+def _painted(cell) -> bool:
+    return (cell.fill.fill_type == "solid" and cell.fill.start_color.rgb == "FFFFFF00"
+            and cell.font.color is not None and cell.font.color.rgb == "FFFF0000")
+
+
+def test_hsr_rows_with_a_request_for_a_human_are_painted(lookup, rail_dir, tmp_path):
+    out = tmp_path / "o.xlsx"
+    s = run(build(tmp_path / "w.xlsx"), lookup, rail_dir, out)
+    ws = openpyxl.load_workbook(out)["高鐵"]
+    asks = {5, 6, 8, 9, 11, 12, 13}     # review alias / 非高鐵站 / 缺距離 ×2 / 不認得 / 站對缺 / 起迄同站
+    for r in range(3, 15):
+        cells = [ws.cell(r, c) for c in (5, 6, 10)]    # 起站、迄站、備註
+        assert all(_painted(c) for c in cells) == (r in asks), r
+        assert all(_painted(c) for c in cells) or not any(_painted(c) for c in cells), r
+        assert not _painted(ws.cell(r, 7)), r
+    assert s.flagged_hsr == len(asks) + 1 and "高鐵 8 列" in s.console_summary()   # + row 2 (桃園)
+    # a resolved row stays plain: aliases, overrides and hand-typed distances need no human
+    assert not any(_painted(ws.cell(r, c)) for r in (3, 4, 7, 14) for c in (5, 6, 10))
+
+
+def test_hsr_painting_is_idempotent_and_optional(lookup, rail_dir, tmp_path):
+    src = build(tmp_path / "w.xlsx")
+    run(src, lookup, rail_dir, tmp_path / "1.xlsx")
+    run(tmp_path / "1.xlsx", lookup, rail_dir, tmp_path / "2.xlsx")
+    for name in ("1.xlsx", "2.xlsx"):
+        ws = openpyxl.load_workbook(tmp_path / name)["高鐵"]
+        assert all(_painted(ws.cell(r, c)) for r in (6, 8, 11) for c in (5, 6, 10)), name
+    run(src, lookup, rail_dir, tmp_path / "n.xlsx", highlight=False)
+    ws = openpyxl.load_workbook(tmp_path / "n.xlsx")["高鐵"]
+    assert not any(_painted(c) for row in ws.iter_rows() for c in row)
+
+
+def test_painting_never_touches_the_factor_cell(lookup, rail_dir, tmp_path):
+    out = tmp_path / "o.xlsx"
+    run(build(tmp_path / "w.xlsx"), lookup, rail_dir, out)
+    ws = openpyxl.load_workbook(out)["高鐵"]
+    # row 2 (桃園 unknown): its 備註 is the J2 factor cell → only 起站/迄站 are painted, J2 is left alone
+    assert _painted(ws["E2"]) and _painted(ws["F2"]) and not _painted(ws["J2"])
